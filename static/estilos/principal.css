@@ -1,0 +1,271 @@
+/* =================================
+   Configurações Globais (Reset e Fontes)
+   ================================= */
+
+/* Importando as fontes para o CSS */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Orbitron:wght@800&display=swap');
+
+:root {
+    --gold: #FFD700;        /* Dourado principal (o mesmo do app) */
+    --gold-darker: #e6c200;
+    --gold-glow: rgba(255, 215, 0, 0.15); /* Brilho da aura */
+    --black: #0b0b0b;        /* Preto principal (o mesmo do app) */
+    --black-light: #1a1a1a;   /* Preto para os cards */
+    --white: #FFF8DC;        /* Branco-creme para textos */
+    --grey: #FFD700aa;       /* Cinza (dourado com transparência) */
+
+    --font-body: 'Inter', sans-serif;
+    --font-title: 'Orbitron', sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    background-color: var(--black);
+    color: var(--white);
+    font-family: var(--font-body);
+    line-height: 1.6;
+}
+
+.container {
+    width: 90%;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+/* =================================
+   Cabeçalho e Navegação
+   ================================= */
+.main-header {
+    background: rgba(11, 11, 11, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #FFD70022;
+    padding: 15px 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.main-header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ESTILO DA LOGO ATUALIZADO (Centro) */
+.logo-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.logo {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    font-family: var(--font-title);
+    font-weight: 800;
+    font-size: 1.2em;
+    color: var(--gold);
+    letter-spacing: 1px;
+    margin-top: 5px;
+}
+
+/* ESTILO DA NAVEGAÇÃO (Esquerda) */
+.main-nav {
+    display: flex;
+    gap: 25px;
+    flex: 1; 
+}
+
+.main-nav a {
+    color: var(--grey);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.main-nav a:hover {
+    color: var(--gold);
+}
+
+/* ESTILO DO BOTÃO (Direita) */
+.header-action {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+}
+
+
+/* =================================
+   Botões (CTA)
+   ================================= */
+.btn {
+    text-decoration: none;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px 20px;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(90deg, var(--gold), var(--gold-darker));
+    color: #000;
+    box-shadow: 0 0 15px var(--gold-glow);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(90deg, #ffe84f, var(--gold));
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+    transform: translateY(-2px);
+}
+
+.btn-large {
+    font-size: 1.1em;
+    padding: 12px 25px;
+}
+
+/* =================================
+   Seção "Hero" (Principal)
+   ================================= */
+.hero {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    text-align: center;
+    padding: 60px 0;
+    
+    /* O Fundo AURA (minimalista) */
+    background: 
+        radial-gradient(ellipse at 50% 30%, var(--gold-glow), var(--black) 50%, #000 100%);
+    
+    border-bottom: 1px solid #FFD70022;
+}
+
+.hero-content {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.hero-title {
+    font-family: var(--font-title);
+    font-size: 3.5em;
+    color: var(--gold);
+    text-shadow: 0 0 25px var(--gold-glow);
+    margin-bottom: 20px;
+}
+
+.hero-subtitle {
+    font-size: 1.2em;
+    color: var(--white);
+    margin-bottom: 30px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* =================================
+   Seções de Conteúdo e Benefícios
+   ================================= */
+.content-section {
+    padding: 60px 0;
+}
+
+.bg-darker {
+    background-color: #050505;
+    border-top: 1px solid #FFD70022;
+    border-bottom: 1px solid #FFD70022;
+}
+
+.section-title {
+    font-family: var(--font-title);
+    font-size: 2.5em;
+    color: var(--gold);
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.content-section p {
+    font-size: 1.1em;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+    color: var(--grey);
+}
+
+.benefits-grid {
+    display: grid;
+    /* MÁGICA: Auto-fit cria colunas automáticas. Minmax garante que não ficam menores que 280px */
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 25px;
+    margin-top: 40px;
+}
+
+.benefit-card {
+    background: var(--black-light);
+    border: 1px solid #FFD70022;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.benefit-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--gold);
+}
+
+.benefit-card h3 {
+    font-family: var(--font-title);
+    color: var(--gold);
+    font-size: 1.4em;
+    margin-bottom: 10px;
+}
+
+.benefit-card p {
+    font-size: 1em;
+    color: var(--grey);
+    text-align: left;
+}
+
+/* =================================
+   Rodapé
+   ================================= */
+.main-footer {
+    padding: 30px 0;
+    text-align: center;
+    border-top: 1px solid #FFD70022;
+    margin-top: 40px;
+}
+
+.main-footer p {
+    color: var(--grey);
+    font-size: 0.9em;
+}
+
+/* RESPONSIVIDADE DO SITE (INDEX) */
+@media (max-width: 768px) {
+    .main-header .container {
+        flex-direction: column;
+        gap: 15px;
+    }
+    .main-nav {
+        justify-content: center;
+    }
+    .hero-title {
+        font-size: 2.5em;
+    }
+    .benefits-grid {
+        grid-template-columns: 1fr;
+    }
+}

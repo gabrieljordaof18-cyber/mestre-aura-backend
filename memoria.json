@@ -1,0 +1,1081 @@
+{
+    "_system_updated_at": "2025-11-21 15:18:22.479533",
+    "aprendizado": [
+        "Gabriel treina às 10h da manhã com foco em força e hipertrofia.",
+        "Dieta hipercalórica com alto teor proteico (2g/kg).",
+        "Gosta de feedbacks técnicos e curtos.",
+        "Evitar treinos noturnos para não afetar o sono."
+    ],
+    "configuracoes_sistema": {
+        "versao_mestre_aura": "15.0",
+        "ultima_sincronizacao": "2025-11-10T11:48:00",
+        "modo_treinamento": "ativo",
+        "interface": "UI_responsiva_com_sensores",
+        "auto_update_sensores": true
+    },
+    "dados_fisiologicos": {
+        "frequencia_cardiaca": 62,
+        "variabilidade_hrv": 84,
+        "temperatura_corporal": 36.7,
+        "passos_diarios": 7972,
+        "calorias_gastas": 3326,
+        "ultima_sincronizacao": "2025-11-21 11:58:54.208056",
+        "sono": {
+            "horas": 6.4,
+            "qualidade": "regular",
+            "ultima_atualizacao": "2025-11-21T11:58:54"
+        },
+        "treino": {
+            "intensidade": 73,
+            "tipo": "hipertrofia",
+            "duracao_min": 66,
+            "ultima_atualizacao": "2025-11-21T11:58:54"
+        },
+        "energia": {
+            "nivel": 97,
+            "status": "ótimo",
+            "ultima_atualizacao": "2025-11-21T11:58:54"
+        },
+        "hrv": {
+            "valor": 84,
+            "variacao_diaria": "+0",
+            "ultima_atualizacao": "2025-11-21T11:58:54",
+            "status": "neutro"
+        },
+        "apple_watch": true,
+        "garmin": true,
+        "strava": true
+    },
+    "gamificacao": {
+        "xp_total": 0,
+        "nivel": 1,
+        "xp_por_nivel": 100,
+        "recompensas_desbloqueadas": [],
+        "missoes_ativas": [
+            {
+                "id": "treino_01",
+                "descricao": "Treino intenso (FC > 120bpm)",
+                "xp": 150,
+                "concluida": false
+            },
+            {
+                "id": "habito_01",
+                "descricao": "Beber 2L de água",
+                "xp": 50,
+                "concluida": false
+            },
+            {
+                "id": "habito_02",
+                "descricao": "Dormir 8h completas",
+                "xp": 100,
+                "concluida": false
+            }
+        ],
+        "missoes_diarias_base": [
+            {
+                "descricao": "Complete seu treino do dia 💪",
+                "xp": 50,
+                "coins": 5
+            },
+            {
+                "descricao": "Durma pelo menos 7 horas 😴",
+                "xp": 40,
+                "coins": 4
+            },
+            {
+                "descricao": "Interaja com a AURA 3 vezes hoje 💬",
+                "xp": 30,
+                "coins": 3
+            }
+        ],
+        "ultima_geracao_missoes": "2025-11-21 15:18:22.476639",
+        "ultima_atualizacao": "",
+        "xp_para_prox_nivel": 100
+    },
+    "historico": [
+        {
+            "mensagem": "crie um treino hibrido de corrida e forçå",
+            "resposta": "Claro, Gabriel! Vamos criar um treino híbrido que combine corrida e força, ideal para melhorar sua resistência cardiovascular enquanto desenvolve força. Aqui está uma proposta:\n\n### Treino Híbrido de Corrida e Força\n\n#### **Aquecimento (10 minutos)**\n- **Corrida leve:** 5 minutos a um ritmo confortável.\n- **Mobilidade articular:** 5 minutos (movimentos dinâmicos para ombros, quadris e tornozelos).\n\n#### **Parte Principal (40-50 minutos)**\n\n**Circuito de Força (4 rodadas):**\n1. **Supino Reto:** 8-10 repetições\n2. **Agachamento:** 8-10 repetições\n3. **Remada Curvada:** 8-10 repetições\n4. **Levantamento Terra:** 8-10 repetições\n5. **Flexão de Braços:** 10-12 repetições\n6. **Prancha:** 30-45 segundos\n\n*Realize cada exercício em sequência, com 1-2 minutos de descanso entre as rodadas.*\n\n**Corrida Intervalada (15-20 minutos):**\n- **Sprints de 30 segundos:** Correr a 85-90% da sua capacidade máxima.\n- **Recuperação de 1-2 minutos:** Caminhada ou trote leve.\n- *Repita o ciclo de sprint e recuperação por 15-20 minutos.*\n\n#### **Desaceleração (5-10 minutos)**\n- **Caminhada leve:** 5 minutos para reduzir a frequência cardíaca.\n- **Alongamentos estáticos:** Foque em pernas, costas e braços.\n\n### Considerações Finais:\n- Esse treino pode ser feito 1-2 vezes por semana, intercalando com seus treinos de força.\n- Hidrate-se bem antes, durante e após o treino.\n- Escute o seu corpo e ajuste a intensidade conforme necessário.\n\nSe precisar de mais alguma coisa ou ajustes, é só avisar!",
+            "data": "2025-11-15 15:57:29"
+        },
+        {
+            "mensagem": "oi",
+            "resposta": "Olá, Gabriel! Como você está? Precisa de ajuda com algo específico hoje?",
+            "data": "2025-11-16 13:13:19"
+        },
+        {
+            "mensagem": "estou fazendo supino inclinado e estou sentindo muito os ombros, o que provavelmente estou fazendo de errado?",
+            "resposta": "Se você está sentindo muito os ombros durante o supino inclinado, pode ser que esteja cometendo algum dos seguintes erros:\n\n1. **Posição da barra:** Certifique-se de que a barra está sendo posicionada corretamente, no meio do peito, e não muito acima ou abaixo, o que pode sobrecarregar os ombros.\n\n2. **Abertura dos pés:** Mantenha os pés firmes no chão para estabilização. Pés levantados ou mal posicionados podem afetar sua base e causar tensão nos ombros.\n\n3. **Ângulo do banco:** O ângulo do banco deve ser entre 30° e 45°. Um ângulo muito alto pode aumentar a tensão nos ombros.\n\n4. **Gripping:** Segure a barra com uma pegada um pouco mais larga que a largura dos ombros. Uma pegada muito estreita ou muito larga pode alterar o foco do exercício.\n\n5. **Controle do movimento:** Execute o movimento de forma controlada, evitando \"deixar a barra cair\" e garantindo que você esteja pressionando de forma explosiva ao subir.\n\n6. **Escapulas:** Mantenha as escápulas contraídas e puxadas para baixo durante o exercício. Isso ajuda a estabilizar a região do ombro.\n\nTente revisar esses pontos e, se a dor persistir, considere consultar um fisioterapeuta ou especialista em movimento. Como você se sente sobre essas dicas?",
+            "data": "2025-11-16 13:42:36"
+        },
+        {
+            "mensagem": "chat qual é meu treino de upper lower que nós criamos?",
+            "resposta": "Seu treino Upper/Lower é o seguinte:\n\n### **Upper 1 (Segunda-feira)**\n1. **Supino Reto:** 4x6-8\n2. **Remada Curvada:** 4x6-8\n3. **Desenvolvimento de Ombro com Halteres:** 3x6-8\n4. **Puxada na Barra:** 3x6-8\n5. **Tríceps na Polia:** 3x8-10\n6. **Prancha:** 3x30-45 segundos\n\n### **Lower 1 (Terça-feira)**\n1. **Agachamento:** 4x6-8\n2. **Levantamento Terra:** 3x6-8\n3. **Afundo:** 3x8-10 (cada lado)\n4. **Elevação de Panturrilha:** 3x10-12\n5. **Prancha Lateral:** 3x30-45 segundos (cada lado)\n\n### **Upper 2 (Quinta-feira)**\n1. **Supino Declinado:** 4x6-8\n2. **Remada Unilateral com Halteres:** 4x6-8 (cada lado)\n3. **Elevação Lateral:** 3x8-10\n4. **Barra Fixa (ou com assistência):** 3x6-8\n5. **Rosca Direta (ou na Máquina):** 3x8-10\n6. **Prancha com Elevação de Membros:** 3x30-45 segundos\n\n### **Lower 2 (Sexta-feira)**\n1. **Agachamento Frontal:** 4x6-8\n2. **Stiff:** 3x6-8\n3. **Leg Press:** 3x8-10\n4. **Elevação de Panturrilha em Pé:** 3x10-12\n5. **Abdominal com Peso:** 3x15\n\nSe precisar de mais alguma informação ou ajuste, é só avisar!",
+            "data": "2025-11-17 11:23:47"
+        },
+        {
+            "mensagem": "olá",
+            "resposta": "Olá, Gabriel! Como você está hoje? Em que posso te ajudar?",
+            "data": "2025-11-18 21:08:39"
+        },
+        {
+            "mensagem": "bom dia",
+            "resposta": "Bom dia, Gabriel! Como você está hoje? Pronto para mais um dia de treino? Se precisar de algo, estou aqui!",
+            "data": "2025-11-21 11:58:56"
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Estou recalibrando meus sistemas (Erro de conexão)."
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Olá, Gabriel! Como posso ajudar você hoje?"
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Olá, Gabriel! Pronto para otimizar seu desempenho? Como posso auxiliá-lo hoje?"
+        },
+        {
+            "role": "user",
+            "content": "bom dia"
+        },
+        {
+            "role": "assistant",
+            "content": "Bom dia, Gabriel! Pronto para mais um dia de conquistas? Vamos potencializar seu desempenho!"
+        },
+        {
+            "role": "user",
+            "content": "pode me chamar de jordão"
+        },
+        {
+            "role": "assistant",
+            "content": "Claro, Jordão! Como posso ajudá-lo a alcançar seus objetivos hoje?"
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Olá, Jordão! Como está seu treinamento e preparação hoje? Vamos otimizar sua performance!"
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Olá, Jordão! Estou aqui para ajudar. O que você gostaria de discutir hoje?"
+        }
+    ],
+    "homeostase": {
+        "score": 83,
+        "estado": "Plena Harmonia 🌟",
+        "componentes": {
+            "corpo": 100,
+            "mente": 60,
+            "energia": 97
+        }
+    },
+    "integracoes": {
+        "apple_watch": true,
+        "garmin": false,
+        "strava": true,
+        "fitbit": false,
+        "apple": false
+    },
+    "jogador": {
+        "nome": "Gabriel",
+        "nivel": 1,
+        "experiencia": 0,
+        "energia": 100,
+        "aura_coins": 25,
+        "missoes_concluidas": 0,
+        "metas": {
+            "peso_alvo": 80,
+            "objetivo": "ganho de massa muscular",
+            "frequencia_treino": "6x por semana",
+            "restricoes": [
+                "evitar déficit calórico"
+            ]
+        },
+        "preferencias": {
+            "horario_treino": "manhã (10h)",
+            "alimentacao": "hipercalórica",
+            "sono_medio": "7h por noite",
+            "tipo_treino": "hipertrofia e força"
+        },
+        "status_atual": {
+            "humor": "disciplinado e motivado",
+            "ultima_refeicao": "café da manhã às 8h10",
+            "ultima_sessao_treino": "costas e bíceps — ontem às 10h05",
+            "progresso_recente": "aumento de 1,2kg de massa magra nas últimas 3 semanas",
+            "recuperacao_muscular": "em progresso",
+            "ultima_atualizacao": ""
+        }
+    },
+    "logs": [
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-12 13:14:29.123541",
+            "dados": {
+                "frequencia_cardiaca": 87,
+                "variabilidade_hrv": 68,
+                "temperatura_corporal": 36.8,
+                "passos_diarios": 7450,
+                "calorias_gastas": 3587,
+                "ultima_sincronizacao": "2025-11-12T13:14:29",
+                "sono": {
+                    "horas": 7.4,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-12T13:14:29"
+                },
+                "hrv": {
+                    "valor": 68,
+                    "variacao_diaria": "+2",
+                    "ultima_atualizacao": "2025-11-12T13:14:29"
+                },
+                "energia": {
+                    "nivel": 78,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-12T13:14:29"
+                },
+                "treino": {
+                    "intensidade": 63,
+                    "tipo": "mobilidade",
+                    "duracao_min": 33,
+                    "ultima_atualizacao": "2025-11-12T13:14:29"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-12 13:23:46.417097",
+            "dados": {
+                "frequencia_cardiaca": 89,
+                "variabilidade_hrv": 73,
+                "temperatura_corporal": 36.4,
+                "passos_diarios": 7976,
+                "calorias_gastas": 3229,
+                "ultima_sincronizacao": "2025-11-12T13:23:46",
+                "sono": {
+                    "horas": 6.5,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-12T13:23:46"
+                },
+                "hrv": {
+                    "valor": 73,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-12T13:23:46"
+                },
+                "energia": {
+                    "nivel": 75,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-12T13:23:46"
+                },
+                "treino": {
+                    "intensidade": 71,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 71,
+                    "ultima_atualizacao": "2025-11-12T13:23:46"
+                },
+                "apple_watch": true,
+                "garmin": false,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-13 11:58:51.084349",
+            "dados": {
+                "frequencia_cardiaca": 67,
+                "variabilidade_hrv": 73,
+                "temperatura_corporal": 36.2,
+                "passos_diarios": 11840,
+                "calorias_gastas": 2810,
+                "ultima_sincronizacao": "2025-11-13T11:58:51",
+                "sono": {
+                    "horas": 7.0,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-13T11:58:51"
+                },
+                "hrv": {
+                    "valor": 73,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-13T11:58:51"
+                },
+                "energia": {
+                    "nivel": 88,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-13T11:58:51"
+                },
+                "treino": {
+                    "intensidade": 61,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 61,
+                    "ultima_atualizacao": "2025-11-13T11:58:51"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-13 19:21:10.829925",
+            "dados": {
+                "frequencia_cardiaca": 62,
+                "variabilidade_hrv": 82,
+                "temperatura_corporal": 36.3,
+                "passos_diarios": 9628,
+                "calorias_gastas": 2746,
+                "ultima_sincronizacao": "2025-11-13T19:21:10",
+                "sono": {
+                    "horas": 6.2,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-13T19:21:10"
+                },
+                "hrv": {
+                    "valor": 82,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-13T19:21:10"
+                },
+                "energia": {
+                    "nivel": 88,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-13T19:21:10"
+                },
+                "treino": {
+                    "intensidade": 85,
+                    "tipo": "força",
+                    "duracao_min": 37,
+                    "ultima_atualizacao": "2025-11-13T19:21:10"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-13 19:22:44.131351",
+            "dados": {
+                "frequencia_cardiaca": 62,
+                "variabilidade_hrv": 65,
+                "temperatura_corporal": 36.7,
+                "passos_diarios": 12619,
+                "calorias_gastas": 3421,
+                "ultima_sincronizacao": "2025-11-13T19:22:44",
+                "sono": {
+                    "horas": 7.8,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-13T19:22:44"
+                },
+                "hrv": {
+                    "valor": 65,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-13T19:22:44"
+                },
+                "energia": {
+                    "nivel": 87,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-13T19:22:44"
+                },
+                "treino": {
+                    "intensidade": 61,
+                    "tipo": "cardio",
+                    "duracao_min": 32,
+                    "ultima_atualizacao": "2025-11-13T19:22:44"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 09:29:19.667475",
+            "dados": {
+                "frequencia_cardiaca": 71,
+                "variabilidade_hrv": 66,
+                "temperatura_corporal": 36.9,
+                "passos_diarios": 11424,
+                "calorias_gastas": 2991,
+                "ultima_sincronizacao": "2025-11-14T09:29:19",
+                "sono": {
+                    "horas": 8.2,
+                    "qualidade": "excelente",
+                    "ultima_atualizacao": "2025-11-14T09:29:19"
+                },
+                "hrv": {
+                    "valor": 66,
+                    "variacao_diaria": "-1",
+                    "ultima_atualizacao": "2025-11-14T09:29:19"
+                },
+                "energia": {
+                    "nivel": 79,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-14T09:29:19"
+                },
+                "treino": {
+                    "intensidade": 74,
+                    "tipo": "força",
+                    "duracao_min": 89,
+                    "ultima_atualizacao": "2025-11-14T09:29:19"
+                },
+                "apple_watch": false,
+                "garmin": false,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 09:40:46.939302",
+            "dados": {
+                "frequencia_cardiaca": 92,
+                "variabilidade_hrv": 79,
+                "temperatura_corporal": 36.6,
+                "passos_diarios": 10292,
+                "calorias_gastas": 2758,
+                "ultima_sincronizacao": "2025-11-14T09:40:46",
+                "sono": {
+                    "horas": 8.4,
+                    "qualidade": "excelente",
+                    "ultima_atualizacao": "2025-11-14T09:40:46"
+                },
+                "hrv": {
+                    "valor": 79,
+                    "variacao_diaria": "+2",
+                    "ultima_atualizacao": "2025-11-14T09:40:46"
+                },
+                "energia": {
+                    "nivel": 72,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T09:40:46"
+                },
+                "treino": {
+                    "intensidade": 65,
+                    "tipo": "força",
+                    "duracao_min": 70,
+                    "ultima_atualizacao": "2025-11-14T09:40:46"
+                },
+                "apple_watch": false,
+                "garmin": false,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 09:56:48.173580",
+            "dados": {
+                "frequencia_cardiaca": 81,
+                "variabilidade_hrv": 79,
+                "temperatura_corporal": 36.4,
+                "passos_diarios": 11955,
+                "calorias_gastas": 2687,
+                "ultima_sincronizacao": "2025-11-14T09:56:48",
+                "sono": {
+                    "horas": 6.5,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-14T09:56:48"
+                },
+                "hrv": {
+                    "valor": 79,
+                    "variacao_diaria": "+2",
+                    "ultima_atualizacao": "2025-11-14T09:56:48"
+                },
+                "energia": {
+                    "nivel": 71,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T09:56:48"
+                },
+                "treino": {
+                    "intensidade": 68,
+                    "tipo": "mobilidade",
+                    "duracao_min": 35,
+                    "ultima_atualizacao": "2025-11-14T09:56:48"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 10:59:42.289595",
+            "dados": {
+                "frequencia_cardiaca": 70,
+                "variabilidade_hrv": 65,
+                "temperatura_corporal": 36.2,
+                "passos_diarios": 12400,
+                "calorias_gastas": 2675,
+                "ultima_sincronizacao": "2025-11-14T10:59:42",
+                "sono": {
+                    "horas": 8.2,
+                    "qualidade": "excelente",
+                    "ultima_atualizacao": "2025-11-14T10:59:42"
+                },
+                "hrv": {
+                    "valor": 65,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-14T10:59:42"
+                },
+                "energia": {
+                    "nivel": 70,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T10:59:42"
+                },
+                "treino": {
+                    "intensidade": 60,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 65,
+                    "ultima_atualizacao": "2025-11-14T10:59:42"
+                },
+                "apple_watch": false,
+                "garmin": false,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 11:00:27.523122",
+            "dados": {
+                "frequencia_cardiaca": 95,
+                "variabilidade_hrv": 55,
+                "temperatura_corporal": 36.8,
+                "passos_diarios": 11980,
+                "calorias_gastas": 2877,
+                "ultima_sincronizacao": "2025-11-14T11:00:27",
+                "sono": {
+                    "horas": 7.2,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-14T11:00:27"
+                },
+                "hrv": {
+                    "valor": 55,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-14T11:00:27"
+                },
+                "energia": {
+                    "nivel": 74,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T11:00:27"
+                },
+                "treino": {
+                    "intensidade": 74,
+                    "tipo": "força",
+                    "duracao_min": 44,
+                    "ultima_atualizacao": "2025-11-14T11:00:27"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 16:27:50.078432",
+            "dados": {
+                "frequencia_cardiaca": 82,
+                "variabilidade_hrv": 81,
+                "temperatura_corporal": 36.7,
+                "passos_diarios": 8964,
+                "calorias_gastas": 2923,
+                "ultima_sincronizacao": "2025-11-14T16:27:50",
+                "sono": {
+                    "horas": 8.5,
+                    "qualidade": "excelente",
+                    "ultima_atualizacao": "2025-11-14T16:27:50"
+                },
+                "hrv": {
+                    "valor": 81,
+                    "variacao_diaria": "-1",
+                    "ultima_atualizacao": "2025-11-14T16:27:50"
+                },
+                "energia": {
+                    "nivel": 79,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-14T16:27:50"
+                },
+                "treino": {
+                    "intensidade": 93,
+                    "tipo": "força",
+                    "duracao_min": 41,
+                    "ultima_atualizacao": "2025-11-14T16:27:50"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 20:22:41.113308",
+            "dados": {
+                "frequencia_cardiaca": 84,
+                "variabilidade_hrv": 56,
+                "temperatura_corporal": 37.1,
+                "passos_diarios": 11275,
+                "calorias_gastas": 2826,
+                "ultima_sincronizacao": "2025-11-14T20:22:41",
+                "sono": {
+                    "horas": 6.5,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-14T20:22:41"
+                },
+                "hrv": {
+                    "valor": 56,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-14T20:22:41"
+                },
+                "energia": {
+                    "nivel": 71,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T20:22:41"
+                },
+                "treino": {
+                    "intensidade": 69,
+                    "tipo": "mobilidade",
+                    "duracao_min": 71,
+                    "ultima_atualizacao": "2025-11-14T20:22:41"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 20:26:22.345001",
+            "dados": {
+                "frequencia_cardiaca": 67,
+                "variabilidade_hrv": 81,
+                "temperatura_corporal": 36.6,
+                "passos_diarios": 7657,
+                "calorias_gastas": 2555,
+                "ultima_sincronizacao": "2025-11-14T20:26:22",
+                "sono": {
+                    "horas": 7.1,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-14T20:26:22"
+                },
+                "hrv": {
+                    "valor": 81,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-14T20:26:22"
+                },
+                "energia": {
+                    "nivel": 73,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-14T20:26:22"
+                },
+                "treino": {
+                    "intensidade": 89,
+                    "tipo": "mobilidade",
+                    "duracao_min": 42,
+                    "ultima_atualizacao": "2025-11-14T20:26:22"
+                },
+                "apple_watch": true,
+                "garmin": false,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 20:42:14.422579",
+            "dados": {
+                "frequencia_cardiaca": 76,
+                "variabilidade_hrv": 77,
+                "temperatura_corporal": 36.6,
+                "passos_diarios": 8948,
+                "calorias_gastas": 2809,
+                "ultima_sincronizacao": "2025-11-14T20:42:14",
+                "sono": {
+                    "horas": 7.5,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-14T20:42:14"
+                },
+                "hrv": {
+                    "valor": 77,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-14T20:42:14"
+                },
+                "energia": {
+                    "nivel": 96,
+                    "status": "ótimo",
+                    "ultima_atualizacao": "2025-11-14T20:42:14"
+                },
+                "treino": {
+                    "intensidade": 85,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 41,
+                    "ultima_atualizacao": "2025-11-14T20:42:14"
+                },
+                "apple_watch": true,
+                "garmin": false,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-14 20:44:57.964876",
+            "dados": {
+                "frequencia_cardiaca": 88,
+                "variabilidade_hrv": 76,
+                "temperatura_corporal": 36.3,
+                "passos_diarios": 9821,
+                "calorias_gastas": 2982,
+                "ultima_sincronizacao": "2025-11-14T20:44:57",
+                "sono": {
+                    "horas": 8.4,
+                    "qualidade": "excelente",
+                    "ultima_atualizacao": "2025-11-14T20:44:57"
+                },
+                "hrv": {
+                    "valor": 76,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-14T20:44:57"
+                },
+                "energia": {
+                    "nivel": 88,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-14T20:44:57"
+                },
+                "treino": {
+                    "intensidade": 80,
+                    "tipo": "mobilidade",
+                    "duracao_min": 79,
+                    "ultima_atualizacao": "2025-11-14T20:44:57"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-15 11:01:31.673979",
+            "dados": {
+                "frequencia_cardiaca": 76,
+                "variabilidade_hrv": 77,
+                "temperatura_corporal": 37.0,
+                "passos_diarios": 9425,
+                "calorias_gastas": 2919,
+                "ultima_sincronizacao": "2025-11-15T11:01:31",
+                "sono": {
+                    "horas": 7.8,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-15T11:01:31"
+                },
+                "hrv": {
+                    "valor": 77,
+                    "variacao_diaria": "+2",
+                    "ultima_atualizacao": "2025-11-15T11:01:31"
+                },
+                "energia": {
+                    "nivel": 70,
+                    "status": "baixo",
+                    "ultima_atualizacao": "2025-11-15T11:01:31"
+                },
+                "treino": {
+                    "intensidade": 66,
+                    "tipo": "mobilidade",
+                    "duracao_min": 69,
+                    "ultima_atualizacao": "2025-11-15T11:01:31"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-15 15:48:44.678962",
+            "dados": {
+                "frequencia_cardiaca": 92,
+                "variabilidade_hrv": 61,
+                "temperatura_corporal": 36.7,
+                "passos_diarios": 11732,
+                "calorias_gastas": 3196,
+                "ultima_sincronizacao": "2025-11-15T15:48:44",
+                "sono": {
+                    "horas": 6.3,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-15T15:48:44"
+                },
+                "hrv": {
+                    "valor": 61,
+                    "variacao_diaria": "+0",
+                    "ultima_atualizacao": "2025-11-15T15:48:44"
+                },
+                "energia": {
+                    "nivel": 96,
+                    "status": "ótimo",
+                    "ultima_atualizacao": "2025-11-15T15:48:44"
+                },
+                "treino": {
+                    "intensidade": 76,
+                    "tipo": "cardio",
+                    "duracao_min": 73,
+                    "ultima_atualizacao": "2025-11-15T15:48:44"
+                },
+                "apple_watch": false,
+                "garmin": false,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-15 15:57:17.931025",
+            "dados": {
+                "frequencia_cardiaca": 69,
+                "variabilidade_hrv": 61,
+                "temperatura_corporal": 36.9,
+                "passos_diarios": 11218,
+                "calorias_gastas": 2986,
+                "ultima_sincronizacao": "2025-11-15T15:57:17",
+                "sono": {
+                    "horas": 6.4,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-15T15:57:17"
+                },
+                "hrv": {
+                    "valor": 61,
+                    "variacao_diaria": "+0",
+                    "ultima_atualizacao": "2025-11-15T15:57:17"
+                },
+                "energia": {
+                    "nivel": 99,
+                    "status": "ótimo",
+                    "ultima_atualizacao": "2025-11-15T15:57:17"
+                },
+                "treino": {
+                    "intensidade": 79,
+                    "tipo": "força",
+                    "duracao_min": 82,
+                    "ultima_atualizacao": "2025-11-15T15:57:17"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-16 13:13:16.378148",
+            "dados": {
+                "frequencia_cardiaca": 85,
+                "variabilidade_hrv": 73,
+                "temperatura_corporal": 37.1,
+                "passos_diarios": 9529,
+                "calorias_gastas": 2876,
+                "ultima_sincronizacao": "2025-11-16T13:13:16",
+                "sono": {
+                    "horas": 6.1,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-16T13:13:16"
+                },
+                "hrv": {
+                    "valor": 73,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-16T13:13:16"
+                },
+                "energia": {
+                    "nivel": 98,
+                    "status": "ótimo",
+                    "ultima_atualizacao": "2025-11-16T13:13:16"
+                },
+                "treino": {
+                    "intensidade": 74,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 46,
+                    "ultima_atualizacao": "2025-11-16T13:13:16"
+                },
+                "apple_watch": false,
+                "garmin": false,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-16 13:42:27.457548",
+            "dados": {
+                "frequencia_cardiaca": 88,
+                "variabilidade_hrv": 85,
+                "temperatura_corporal": 36.2,
+                "passos_diarios": 12263,
+                "calorias_gastas": 2828,
+                "ultima_sincronizacao": "2025-11-16T13:42:27",
+                "sono": {
+                    "horas": 6.1,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-16T13:42:27"
+                },
+                "hrv": {
+                    "valor": 85,
+                    "variacao_diaria": "+1",
+                    "ultima_atualizacao": "2025-11-16T13:42:27"
+                },
+                "energia": {
+                    "nivel": 78,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-16T13:42:27"
+                },
+                "treino": {
+                    "intensidade": 65,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 33,
+                    "ultima_atualizacao": "2025-11-16T13:42:27"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-17 11:23:35.875876",
+            "dados": {
+                "frequencia_cardiaca": 60,
+                "variabilidade_hrv": 67,
+                "temperatura_corporal": 36.7,
+                "passos_diarios": 9859,
+                "calorias_gastas": 2500,
+                "ultima_sincronizacao": "2025-11-17T11:23:35",
+                "sono": {
+                    "horas": 6.5,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-17T11:23:35"
+                },
+                "hrv": {
+                    "valor": 67,
+                    "variacao_diaria": "-1",
+                    "ultima_atualizacao": "2025-11-17T11:23:35"
+                },
+                "energia": {
+                    "nivel": 81,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-17T11:23:35"
+                },
+                "treino": {
+                    "intensidade": 75,
+                    "tipo": "força",
+                    "duracao_min": 33,
+                    "ultima_atualizacao": "2025-11-17T11:23:35"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": false
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-18 21:08:37.691193",
+            "dados": {
+                "frequencia_cardiaca": 73,
+                "variabilidade_hrv": 74,
+                "temperatura_corporal": 36.4,
+                "passos_diarios": 8296,
+                "calorias_gastas": 2610,
+                "ultima_sincronizacao": "2025-11-18T21:08:37",
+                "sono": {
+                    "horas": 7.3,
+                    "qualidade": "boa",
+                    "ultima_atualizacao": "2025-11-18T21:08:37"
+                },
+                "hrv": {
+                    "valor": 74,
+                    "variacao_diaria": "+3",
+                    "ultima_atualizacao": "2025-11-18T21:08:37"
+                },
+                "energia": {
+                    "nivel": 89,
+                    "status": "bom",
+                    "ultima_atualizacao": "2025-11-18T21:08:37"
+                },
+                "treino": {
+                    "intensidade": 86,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 85,
+                    "ultima_atualizacao": "2025-11-18T21:08:37"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        },
+        {
+            "tipo": "SINCRONIZACAO_SENSORES",
+            "data": "2025-11-21 11:58:54.208066",
+            "dados": {
+                "frequencia_cardiaca": 62,
+                "variabilidade_hrv": 84,
+                "temperatura_corporal": 36.7,
+                "passos_diarios": 7972,
+                "calorias_gastas": 3326,
+                "ultima_sincronizacao": "2025-11-21T11:58:54",
+                "sono": {
+                    "horas": 6.4,
+                    "qualidade": "regular",
+                    "ultima_atualizacao": "2025-11-21T11:58:54"
+                },
+                "hrv": {
+                    "valor": 84,
+                    "variacao_diaria": "+0",
+                    "ultima_atualizacao": "2025-11-21T11:58:54"
+                },
+                "energia": {
+                    "nivel": 97,
+                    "status": "ótimo",
+                    "ultima_atualizacao": "2025-11-21T11:58:54"
+                },
+                "treino": {
+                    "intensidade": 73,
+                    "tipo": "hipertrofia",
+                    "duracao_min": 66,
+                    "ultima_atualizacao": "2025-11-21T11:58:54"
+                },
+                "apple_watch": true,
+                "garmin": true,
+                "strava": true
+            }
+        }
+    ],
+    "memoria_longo_prazo": {
+        "nutricao": [
+            "Evitar déficit calórico em dias de treino.",
+            "Focar em proteína entre 1.8g e 2.2g/kg/dia.",
+            "Priorizar refeição rica em carboidratos antes do treino matinal."
+        ],
+        "treinamento": [
+            "Progresso de carga semanal.",
+            "Divisão ABCDEF (peito, costas, perna, ombro, bíceps, tríceps).",
+            "Descanso ativo a cada 7 dias."
+        ],
+        "mentalidade": [
+            "Lembrar Gabriel de que constância > intensidade.",
+            "Usar reforço positivo.",
+            "Aplicar mindset de atleta — corpo e mente em sinergia."
+        ]
+    },
+    "ultima_atualizacao": "2025-11-18 21:08:39.998438",
+    "ultima_feedback": {
+        "texto": "",
+        "data": ""
+    }
+}

@@ -1,0 +1,220 @@
+/* ==============================================================
+   🎨 ESTILOS DO MESTRE DA AURA (RESPONSIVO & MODERNO)
+   ============================================================== */
+
+:root {
+  --gold: #FFD700;
+  --gold-dim: rgba(255, 215, 0, 0.6);
+  --gold-glow: rgba(255, 215, 0, 0.15);
+  --dark-bg: rgba(20, 20, 20, 0.95);
+  --panel-bg: rgba(10, 10, 10, 0.6);
+  --text-main: #FFF8DC;
+  --font-body: 'Inter', sans-serif;
+  --font-title: 'Orbitron', sans-serif;
+}
+
+body {
+  /* Centraliza tudo na tela */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+  padding: 20px 10px; /* Espaço nas laterais em mobile */
+  
+  background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+  color: var(--gold);
+  font-family: var(--font-body);
+  letter-spacing: 0.3px;
+}
+
+/* --- CONTAINER PRINCIPAL (O Segredo da Responsividade) --- */
+/* Em vez de width: 360px fixo, usamos max-width */
+.mestre-wrapper {
+  width: 100%;
+  max-width: 420px; /* Tamanho ideal para chat */
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* Espaço entre os painéis */
+}
+
+/* --- PAINÉIS GENÉRICOS (Vidro Fosco) --- */
+.panel-box {
+  background: var(--panel-bg);
+  backdrop-filter: blur(8px); /* Efeito vidro */
+  border: 1px solid var(--gold-dim);
+  border-radius: 16px;
+  padding: 15px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  transition: transform 0.2s;
+}
+
+.panel-box:hover {
+  border-color: var(--gold);
+}
+
+/* --- CABEÇALHOS E TEXTOS --- */
+h1 {
+  font-family: var(--font-title);
+  font-size: 1.8em;
+  text-align: center;
+  margin-bottom: 20px;
+  text-shadow: 0 0 15px var(--gold-dim);
+}
+
+.titulo { font-weight: 700; color: var(--gold); margin-bottom: 5px; }
+.sub { font-size: 0.9em; color: var(--text-main); opacity: 0.9; }
+.small { font-size: 0.8em; color: var(--gold-dim); margin-top: 5px; }
+
+/* --- CHAT (Área de Mensagens) --- */
+#chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 400px; /* Altura fixa para o chat */
+}
+
+#mensagens {
+  flex: 1;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.3);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Balões de Mensagem */
+.msg {
+  padding: 8px 12px;
+  margin: 6px 0;
+  border-radius: 10px;
+  max-width: 85%;
+  font-size: 0.95em;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.msg.user {
+  background: var(--gold);
+  color: #000;
+  align-self: flex-end; /* Direita */
+  margin-left: auto;
+  border-bottom-right-radius: 2px;
+  font-weight: 600;
+}
+
+.msg.bot {
+  background: rgba(50, 50, 50, 0.8);
+  color: var(--text-main);
+  align-self: flex-start; /* Esquerda */
+  border: 1px solid var(--gold-dim);
+  border-bottom-left-radius: 2px;
+}
+
+/* Área de Input */
+.input-area {
+  display: flex;
+  gap: 10px;
+}
+
+input[type="text"] {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  padding: 12px;
+  border-radius: 8px;
+  outline: none;
+}
+
+button.enviar {
+  background: var(--gold);
+  color: #000;
+  border: none;
+  font-weight: bold;
+  padding: 0 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+button.enviar:hover {
+  background: #fff;
+  box-shadow: 0 0 15px var(--gold);
+}
+
+button:disabled {
+  background: #555;
+  cursor: wait;
+}
+
+/* --- LISTA DE MISSÕES --- */
+.missao {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--gold-dim);
+}
+
+.btn-claim {
+  background: transparent;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.btn-claim:hover { background: var(--gold-glow); }
+
+/* --- BARRA DE XP --- */
+.xp-container {
+  background: rgba(255,255,255,0.1);
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), #ff8c00);
+  width: 0%;
+  transition: width 1s ease-out;
+}
+
+/* --- GAUGE DE EQUILÍBRIO --- */
+.gauge-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.gauge-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2em;
+  font-weight: bold;
+  color: var(--text-main);
+  box-shadow: 0 0 10px rgba(0,0,0,0.5) inset;
+  transition: all 0.5s ease;
+}
+
+/* --- STATUS SENSORES --- */
+.sensor-row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,215,0,0.1);
+  padding: 4px 0;
+  font-size: 0.9em;
+}

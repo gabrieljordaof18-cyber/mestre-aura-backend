@@ -1,0 +1,37 @@
+[
+    {
+        "id": "habito_01",
+        "descricao": "Beber 2L de água",
+        "xp": 50,
+        "categoria": "saude",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "habito_02",
+        "descricao": "Dormir 8h completas",
+        "xp": 100,
+        "categoria": "descanso",
+        "tipo_verificacao": "sensor_sono"
+    },
+    {
+        "id": "treino_01",
+        "descricao": "Treino intenso (FC > 120bpm)",
+        "xp": 150,
+        "categoria": "treino",
+        "tipo_verificacao": "sensor_cardio"
+    },
+    {
+        "id": "mente_01",
+        "descricao": "Meditar por 10 minutos",
+        "xp": 40,
+        "categoria": "mente",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "treino_02",
+        "descricao": "Caminhada de 30min",
+        "xp": 60,
+        "categoria": "treino",
+        "tipo_verificacao": "passos"
+    }
+]

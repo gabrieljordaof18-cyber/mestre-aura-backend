@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA Performance – Desvende sua performance máxima</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Orbitron:wght@800&display=swap" rel="stylesheet">
+    
+    <!-- Corrigido para carregar da pasta 'estilos' o arquivo 'principal.css' -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos/principal.css') }}">
+</head>
+<body>
+
+    <!-- =================================
+         CABEÇALHO ATUALIZADO (com base no rascunho)
+         ================================= -->
+    <header class="main-header">
+        <div class="container">
+            
+            <!-- ITEM DA ESQUERDA (Como no rascunho) -->
+            <nav class="main-nav">
+                <a href="#oque-e">O que é</a>
+                <a href="#beneficios">Benefícios</a>
+            </nav>
+
+            <!-- ITEM CENTRAL (Como no rascunho) -->
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo AURA Performance" class="logo">
+                <span class="logo-text">AURA PERFORMANCE</span>
+            </div>
+            
+            <!-- ITEM DA DIREITA (Como no rascunho) -->
+            <div class="header-action">
+                <a href="https://auraperformance.fit" class="btn btn-primary" target="_blank">Acessar App</a>
+            </div>
+
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container hero-content">
+                <h1 class="hero-title">Transforme sua performance máxima</h1>
+                <p class="hero-subtitle">Construa sua AURA. Onde seu suor e disciplina finalmente valem recompensas reais.</p>
+                <a href="https://auraperformance.fit" class="btn btn-primary btn-large" target="_blank">Acessar App</a>
+            </div>
+        </section>
+
+        <section id="oque-e" class="content-section">
+            <div class="container">
+                <h2 class="section-title">O Que é o AURA?</h2>
+                <p>O Aura Performance é mais do que um app; é o seu mestre de performance pessoal. Uma inteligência artificial que centraliza seus dados de saúde, entende sua rotina e traduz seus dados fisiológicos (sono, treino, HRV) em feedback inteligente e acionável. Nossa missão é transformar sua disciplina em evolução contínua.</p>
+            </div>
+        </section>
+
+        <section id="beneficios" class="content-section bg-darker">
+            <div class="container">
+                <h2 class="section-title">Benefícios</h2>
+                <div class="benefits-grid">
+                    <div class="benefit-card">
+                        <h3>Visão Unificada</h3>
+                        <p>Todos os seus dados de saúde do Apple Watch, Garmin, Strava e outros em um só lugar.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <h3>Feedback Inteligente</h3>
+                        <p>Não apenas dados, mas conselhos práticos sobre seu sono, recuperação e treino.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <h3>Evolução Contínua</h3>
+                        <p>Acompanhe seu progresso com nosso sistema de XP, missões diárias e recompensas reais.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="main-footer">
+        <div class="container">
+            <p>© 2025 Aura Performance. Todos os direitos reservados.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

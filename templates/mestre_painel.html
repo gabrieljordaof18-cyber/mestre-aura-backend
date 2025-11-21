@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mestre-wrapper">
+
+  <div class="panel-box" id="painel-status">
+    <div class="titulo">Nome: <span style="color:#fff">Gabriel</span></div>
+    
+    <div class="small" style="margin-top:10px; margin-bottom:5px">SENSORES</div>
+    <div class="sensor-row"><span>Apple Watch</span> <span id="apple_status">...</span></div>
+    <div class="sensor-row"><span>Garmin</span> <span id="garmin_status">...</span></div>
+    
+    <div class="small" style="margin-top:10px; margin-bottom:5px">FISIOLOGIA</div>
+    <div class="sensor-row"><span>⚡ Energia</span> <span id="energia">--</span></div>
+    <div class="sensor-row"><span>😴 Sono</span> <span id="sono_info">--</span></div>
+    <div class="sensor-row"><span>💓 HRV</span> <span id="hrv_info">--</span></div>
+    <div class="sensor-row"><span>🏋️ Treino</span> <span id="treino_info">--</span></div>
+  </div>
+
+  <div class="panel-box" id="chat-container">
+    <div id="mensagens">
+        </div>
+    <div class="input-area">
+        <input type="text" id="msg" placeholder="Fale com a AURA..." autocomplete="off">
+        <button class="enviar" onclick="enviarMensagem()">Enviar</button>
+    </div>
+  </div>
+
+  <div class="panel-box">
+    <div class="titulo">💬 Insight AURA</div>
+    <div id="feedback-text" class="sub">Aguardando análise...</div>
+  </div>
+
+  <div class="panel-box">
+    <div style="display:flex; justify-content:space-between;">
+        <div class="titulo">Nível <span id="nivel-num">1</span></div>
+        <div class="small" id="xp-necessario">Meta: --</div>
+    </div>
+    
+    <div class="xp-container">
+        <div class="xp-fill" id="xp-bar"></div>
+    </div>
+    <div class="small" style="text-align:right;" id="xp-atual">0 XP</div>
+
+    <hr style="border:0; border-top:1px solid var(--gold-dim); margin: 10px 0;">
+    
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="titulo">Missões Diárias</div>
+        <div class="small">Feitas: <span id="missoes-concluidas">0</span></div>
+    </div>
+    
+    <div id="lista-missoes" style="margin-top:10px;">
+        <div class="small">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="panel-box">
+    <div class="titulo">⚖️ Equilíbrio Aural</div>
+    <div class="gauge-wrapper">
+        <div class="gauge-circle" id="equilibrio-gauge">
+            <span id="equilibrio-percent">--</span>
+        </div>
+        <div style="flex:1">
+            <div id="equilibrio-sub" class="titulo" style="font-size:1em;">Calculando...</div>
+            <div id="equilibrio-legend" class="small">Analisando Corpo, Mente e Energia</div>
+        </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

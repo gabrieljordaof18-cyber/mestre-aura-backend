@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}MESTRE DA AURA{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='mestre_estilos.css') }}">
+</head>
+
+<body>
+<h1>MESTRE DA AURA</h1>
+
+{% block content %}{% endblock %}
+
+<script src="{{ url_for('static', filename='mestre_scripts.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+{
+    "_system_updated_at": "2025-11-21 15:18:22.389450",
+    "afinidade": {
+        "score": 62,
+        "min": 0,
+        "max": 100,
+        "ultima_atualizacao": "2025-11-13 11:15:47.309457"
+    },
+    "equilibrio": {
+        "harmonia": 83,
+        "ultima_atualizacao": ""
+    },
+    "estatisticas": {
+        "positivas": 2,
+        "negativas": 0,
+        "neutras": 0,
+        "total": 2
+    },
+    "gamificacao": {
+        "xp_total": 30,
+        "nivel": 3,
+        "xp_por_nivel": 1000,
+        "recompensas_desbloqueadas": [],
+        "missoes_diarias": [
+            {
+                "id": 1,
+                "descricao": "Concluir um treino registrado hoje",
+                "xp": 100,
+                "concluida": true
+            },
+            {
+                "id": 2,
+                "descricao": "Dormir pelo menos 7 horas",
+                "xp": 150,
+                "concluida": true
+            },
+            {
+                "id": 3,
+                "descricao": "Interagir com a AURA 3 vezes no dia",
+                "xp": 80,
+                "concluida": true
+            }
+        ],
+        "ultima_atualizacao": "",
+        "xp_para_prox_nivel": 300,
+        "aura_coins": 30,
+        "missoes_diarias_historico": [
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_01",
+                        "descricao": "Treino intenso (FC > 120bpm)",
+                        "xp": 150,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "treino_01",
+                        "descricao": "Treino intenso (FC > 120bpm)",
+                        "xp": 150,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    }
+                ]
+            }
+        ],
+        "ranking_global": []
+    },
+    "homeostase": {
+        "descricao": "Sistema de equilíbrio AURAL (Homeostase) entre corpo, mente e energia.",
+        "score_harmonia": 75,
+        "componentes": {
+            "corpo": 75,
+            "mente": 75,
+            "energia": 75
+        },
+        "min": 0,
+        "max": 100,
+        "ultima_atualizacao": ""
+    },
+    "interacoes": [
+        {
+            "sentimento": "positivo",
+            "mensagem": "",
+            "timestamp": "2025-11-13 11:15:46.082411"
+        },
+        {
+            "sentimento": "positivo",
+            "mensagem": "",
+            "timestamp": "2025-11-13 11:15:47.309457"
+        }
+    ],
+    "personalidade": {
+        "nome": "Mestre da AURA",
+        "versao": "19.0",
+        "descricao": "Personalidade inicial: técnico, empático, direto. Evolui com interações do usuário."
+    },
+    "ultima_atualizacao_global": "2025-11-18 21:08:22.021835"
+}
