@@ -4,3 +4,4 @@ python-dotenv
 openai
 dnspython
 gunicorn
+flask-cors

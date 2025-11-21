@@ -1,5 +1,5 @@
 {
-    "_system_updated_at": "2025-11-21 15:18:22.479533",
+    "_system_updated_at": "2025-11-21 17:07:13.915666",
     "aprendizado": [
         "Gabriel treina às 10h da manhã com foco em força e hipertrofia.",
         "Dieta hipercalórica com alto teor proteico (2g/kg).",
@@ -53,9 +53,9 @@
         "recompensas_desbloqueadas": [],
         "missoes_ativas": [
             {
-                "id": "treino_01",
-                "descricao": "Treino intenso (FC > 120bpm)",
-                "xp": 150,
+                "id": "treino_02",
+                "descricao": "Caminhada de 30min",
+                "xp": 60,
                 "concluida": false
             },
             {
@@ -65,9 +65,9 @@
                 "concluida": false
             },
             {
-                "id": "habito_02",
-                "descricao": "Dormir 8h completas",
-                "xp": 100,
+                "id": "mente_01",
+                "descricao": "Meditar por 10 minutos",
+                "xp": 40,
                 "concluida": false
             }
         ],
@@ -88,49 +88,11 @@
                 "coins": 3
             }
         ],
-        "ultima_geracao_missoes": "2025-11-21 15:18:22.476639",
+        "ultima_geracao_missoes": "2025-11-21 17:07:13.847239",
         "ultima_atualizacao": "",
         "xp_para_prox_nivel": 100
     },
     "historico": [
-        {
-            "mensagem": "crie um treino hibrido de corrida e forçå",
-            "resposta": "Claro, Gabriel! Vamos criar um treino híbrido que combine corrida e força, ideal para melhorar sua resistência cardiovascular enquanto desenvolve força. Aqui está uma proposta:\n\n### Treino Híbrido de Corrida e Força\n\n#### **Aquecimento (10 minutos)**\n- **Corrida leve:** 5 minutos a um ritmo confortável.\n- **Mobilidade articular:** 5 minutos (movimentos dinâmicos para ombros, quadris e tornozelos).\n\n#### **Parte Principal (40-50 minutos)**\n\n**Circuito de Força (4 rodadas):**\n1. **Supino Reto:** 8-10 repetições\n2. **Agachamento:** 8-10 repetições\n3. **Remada Curvada:** 8-10 repetições\n4. **Levantamento Terra:** 8-10 repetições\n5. **Flexão de Braços:** 10-12 repetições\n6. **Prancha:** 30-45 segundos\n\n*Realize cada exercício em sequência, com 1-2 minutos de descanso entre as rodadas.*\n\n**Corrida Intervalada (15-20 minutos):**\n- **Sprints de 30 segundos:** Correr a 85-90% da sua capacidade máxima.\n- **Recuperação de 1-2 minutos:** Caminhada ou trote leve.\n- *Repita o ciclo de sprint e recuperação por 15-20 minutos.*\n\n#### **Desaceleração (5-10 minutos)**\n- **Caminhada leve:** 5 minutos para reduzir a frequência cardíaca.\n- **Alongamentos estáticos:** Foque em pernas, costas e braços.\n\n### Considerações Finais:\n- Esse treino pode ser feito 1-2 vezes por semana, intercalando com seus treinos de força.\n- Hidrate-se bem antes, durante e após o treino.\n- Escute o seu corpo e ajuste a intensidade conforme necessário.\n\nSe precisar de mais alguma coisa ou ajustes, é só avisar!",
-            "data": "2025-11-15 15:57:29"
-        },
-        {
-            "mensagem": "oi",
-            "resposta": "Olá, Gabriel! Como você está? Precisa de ajuda com algo específico hoje?",
-            "data": "2025-11-16 13:13:19"
-        },
-        {
-            "mensagem": "estou fazendo supino inclinado e estou sentindo muito os ombros, o que provavelmente estou fazendo de errado?",
-            "resposta": "Se você está sentindo muito os ombros durante o supino inclinado, pode ser que esteja cometendo algum dos seguintes erros:\n\n1. **Posição da barra:** Certifique-se de que a barra está sendo posicionada corretamente, no meio do peito, e não muito acima ou abaixo, o que pode sobrecarregar os ombros.\n\n2. **Abertura dos pés:** Mantenha os pés firmes no chão para estabilização. Pés levantados ou mal posicionados podem afetar sua base e causar tensão nos ombros.\n\n3. **Ângulo do banco:** O ângulo do banco deve ser entre 30° e 45°. Um ângulo muito alto pode aumentar a tensão nos ombros.\n\n4. **Gripping:** Segure a barra com uma pegada um pouco mais larga que a largura dos ombros. Uma pegada muito estreita ou muito larga pode alterar o foco do exercício.\n\n5. **Controle do movimento:** Execute o movimento de forma controlada, evitando \"deixar a barra cair\" e garantindo que você esteja pressionando de forma explosiva ao subir.\n\n6. **Escapulas:** Mantenha as escápulas contraídas e puxadas para baixo durante o exercício. Isso ajuda a estabilizar a região do ombro.\n\nTente revisar esses pontos e, se a dor persistir, considere consultar um fisioterapeuta ou especialista em movimento. Como você se sente sobre essas dicas?",
-            "data": "2025-11-16 13:42:36"
-        },
-        {
-            "mensagem": "chat qual é meu treino de upper lower que nós criamos?",
-            "resposta": "Seu treino Upper/Lower é o seguinte:\n\n### **Upper 1 (Segunda-feira)**\n1. **Supino Reto:** 4x6-8\n2. **Remada Curvada:** 4x6-8\n3. **Desenvolvimento de Ombro com Halteres:** 3x6-8\n4. **Puxada na Barra:** 3x6-8\n5. **Tríceps na Polia:** 3x8-10\n6. **Prancha:** 3x30-45 segundos\n\n### **Lower 1 (Terça-feira)**\n1. **Agachamento:** 4x6-8\n2. **Levantamento Terra:** 3x6-8\n3. **Afundo:** 3x8-10 (cada lado)\n4. **Elevação de Panturrilha:** 3x10-12\n5. **Prancha Lateral:** 3x30-45 segundos (cada lado)\n\n### **Upper 2 (Quinta-feira)**\n1. **Supino Declinado:** 4x6-8\n2. **Remada Unilateral com Halteres:** 4x6-8 (cada lado)\n3. **Elevação Lateral:** 3x8-10\n4. **Barra Fixa (ou com assistência):** 3x6-8\n5. **Rosca Direta (ou na Máquina):** 3x8-10\n6. **Prancha com Elevação de Membros:** 3x30-45 segundos\n\n### **Lower 2 (Sexta-feira)**\n1. **Agachamento Frontal:** 4x6-8\n2. **Stiff:** 3x6-8\n3. **Leg Press:** 3x8-10\n4. **Elevação de Panturrilha em Pé:** 3x10-12\n5. **Abdominal com Peso:** 3x15\n\nSe precisar de mais alguma informação ou ajuste, é só avisar!",
-            "data": "2025-11-17 11:23:47"
-        },
-        {
-            "mensagem": "olá",
-            "resposta": "Olá, Gabriel! Como você está hoje? Em que posso te ajudar?",
-            "data": "2025-11-18 21:08:39"
-        },
-        {
-            "mensagem": "bom dia",
-            "resposta": "Bom dia, Gabriel! Como você está hoje? Pronto para mais um dia de treino? Se precisar de algo, estou aqui!",
-            "data": "2025-11-21 11:58:56"
-        },
-        {
-            "role": "user",
-            "content": "olá"
-        },
-        {
-            "role": "assistant",
-            "content": "Estou recalibrando meus sistemas (Erro de conexão)."
-        },
         {
             "role": "user",
             "content": "olá"
@@ -178,6 +140,38 @@
         {
             "role": "assistant",
             "content": "Olá, Jordão! Estou aqui para ajudar. O que você gostaria de discutir hoje?"
+        },
+        {
+            "role": "user",
+            "content": "olá"
+        },
+        {
+            "role": "assistant",
+            "content": "Olá novamente! Como posso te ajudar hoje? Alguma dúvida ou informação que você precisa sobre seu desempenho?"
+        },
+        {
+            "role": "user",
+            "content": "Oi"
+        },
+        {
+            "role": "assistant",
+            "content": "Oi! Pronto para otimizar seu treinamento ou revisar seus dados? Estou à disposição!"
+        },
+        {
+            "role": "user",
+            "content": "Aura o que você acha do treino híbrido em relação a só a academia ?"
+        },
+        {
+            "role": "assistant",
+            "content": "O treino híbrido, que combina exercícios de força na academia com atividades aeróbicas, oferece benefícios que podem aumentar a performance geral. Essa abordagem melhora não apenas a força e a resistência, mas também a recuperação e a saúde cardiovascular, levando a resultados mais robustos e funcionais."
+        },
+        {
+            "role": "user",
+            "content": "Eu tenho 44 anos, e não faço nenhuma atividade. Como posso começar?"
+        },
+        {
+            "role": "assistant",
+            "content": "Comece com uma avaliação física e um plano de exercícios leve, focando em atividades de baixo impacto, como caminhadas e alongamentos, para aumentar a resistência cardiovascular e a mobilidade. Gradualmente, adicione treinos de força e aeróbicos, respeitando sempre seus limites e buscando orientação profissional para garantir segurança e eficácia."
         }
     ],
     "homeostase": {

@@ -1,4 +1,5 @@
 from flask import Flask, render_template
+from flask_cors import CORS # <--- Importação Nova (Necessária para o Base44)
 from rotas_api import api_bp # Importa o novo módulo de rotas de API
 
 # ===================================================
@@ -6,6 +7,10 @@ from rotas_api import api_bp # Importa o novo módulo de rotas de API
 # ===================================================
 # Dizemos explicitamente onde estão as pastas 'templates' e 'static'.
 app = Flask(__name__, template_folder='templates', static_folder='static')
+
+# LIBERA O ACESSO GERAL (CORS)
+# Isso permite que o App Base44 converse com este servidor
+CORS(app)
 
 # 1. REGISTRA AS ROTAS DE API:
 # Todas as rotas de dados (comando, xp, missoes, equilibrio) agora estão aqui.

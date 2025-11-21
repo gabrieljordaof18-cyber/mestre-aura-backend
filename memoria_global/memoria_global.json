@@ -1,5 +1,5 @@
 {
-    "_system_updated_at": "2025-11-21 15:18:22.389450",
+    "_system_updated_at": "2025-11-21 17:07:13.748323",
     "afinidade": {
         "score": 62,
         "min": 0,
@@ -271,6 +271,75 @@
                         "id": "habito_02",
                         "descricao": "Dormir 8h completas",
                         "xp": 100,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "habito_02",
+                        "descricao": "Dormir 8h completas",
+                        "xp": 100,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "treino_01",
+                        "descricao": "Treino intenso (FC > 120bpm)",
+                        "xp": 150,
+                        "concluida": false
+                    },
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
+                        "concluida": false
+                    }
+                ]
+            },
+            {
+                "data": "2025-11-21",
+                "missoes": [
+                    {
+                        "id": "treino_02",
+                        "descricao": "Caminhada de 30min",
+                        "xp": 60,
+                        "concluida": false
+                    },
+                    {
+                        "id": "habito_01",
+                        "descricao": "Beber 2L de água",
+                        "xp": 50,
+                        "concluida": false
+                    },
+                    {
+                        "id": "mente_01",
+                        "descricao": "Meditar por 10 minutos",
+                        "xp": 40,
                         "concluida": false
                     }
                 ]
