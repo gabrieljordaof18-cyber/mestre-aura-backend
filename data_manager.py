@@ -36,7 +36,7 @@ def carregar_json(caminho_arquivo, schema_padrao=None):
     dados = {}
     nome_colecao = _definir_colecao(caminho_arquivo)
     
-    # 1. Tenta ler do MongoDB (Correção aplicada aqui)
+    # 1. Tenta ler do MongoDB
     if mongo_db is not None:
         try:
             colecao = mongo_db[nome_colecao]
@@ -71,7 +71,7 @@ def salvar_json(caminho_arquivo, dados):
     sucesso_local = _salvar_arquivo_local(caminho_arquivo, dados)
     sucesso_nuvem = False
 
-    # Tenta salvar na nuvem (Correção aplicada aqui)
+    # Tenta salvar na nuvem
     if mongo_db is not None:
         try:
             nome_colecao = _definir_colecao(caminho_arquivo)
@@ -92,8 +92,55 @@ def salvar_json(caminho_arquivo, dados):
 
     return sucesso_local or sucesso_nuvem
 
+# ==============================================================
+# 🏃 INTEGRAÇÃO STRAVA (NOVO)
+# ==============================================================
 
-# --- Funções Auxiliares ---
+def salvar_conexao_strava(dados_atleta, tokens):
+    """
+    Salva os dados de autenticação do Strava em uma coleção dedicada 'usuarios'.
+    """
+    if mongo_db is None:
+        print("⚠️ [DATA] MongoDB não conectado. Impossível salvar Strava.")
+        return False
+
+    try:
+        # Usa uma coleção específica para usuários (separado da memória global do jogo)
+        colecao = mongo_db["usuarios"]
+        
+        strava_id = dados_atleta.get('id')
+        
+        dados_para_salvar = {
+            "strava_id": strava_id,
+            "nome": dados_atleta.get('firstname'),
+            "sobrenome": dados_atleta.get('lastname'),
+            "foto_perfil": dados_atleta.get('profile'),
+            "tokens": {
+                "access_token": tokens.get('access_token'),
+                "refresh_token": tokens.get('refresh_token'),
+                "expires_at": tokens.get('expires_at')
+            },
+            "ultima_atualizacao": datetime.now()
+        }
+
+        # Upsert: Atualiza se existir, cria se não existir
+        colecao.update_one(
+            {"strava_id": strava_id},
+            {"$set": dados_para_salvar},
+            upsert=True
+        )
+        
+        print(f"✅ [DATA] Usuário Strava ID {strava_id} salvo com sucesso.")
+        return True
+        
+    except Exception as e:
+        print(f"❌ [DATA] Erro ao salvar dados Strava: {e}")
+        return False
+
+
+# ==============================================================
+# ⚙️ FUNÇÕES AUXILIARES INTERNAS
+# ==============================================================
 
 def _salvar_arquivo_local(caminho, dados):
     caminho_temp = caminho + ".tmp"

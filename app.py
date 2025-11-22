@@ -3,6 +3,7 @@ import requests
 from flask import Flask, render_template, request, jsonify, redirect
 from flask_cors import CORS
 from rotas_api import api_bp  # Importa o teu módulo de rotas existente
+from data_manager import salvar_conexao_strava # <--- NOVA IMPORTAÇÃO CRUCIAL
 
 # ===================================================
 # ⚙️ CONFIGURAÇÃO DO SERVIDOR FLASK
@@ -44,7 +45,7 @@ def strava_login():
 def strava_callback():
     """
     Passo 2: O Strava devolve o usuário para cá com um 'code'.
-    Nós trocamos esse 'code' pelo Token de Acesso real.
+    Nós trocamos esse 'code' pelo Token de Acesso real e SALVAMOS no MongoDB.
     """
     code = request.args.get('code')
     
@@ -62,23 +63,40 @@ def strava_callback():
     
     # Faz a requisição ao Strava (Back-to-Back)
     response = requests.post(token_url, data=payload)
-    dados_token = response.json()
+    dados_recebidos = response.json()
     
     if response.status_code == 200:
-        # SUCESSO!
-        # Aqui temos o access_token e refresh_token.
-        # Por enquanto, mostramos na tela para confirmar que funcionou.
-        athlete_info = dados_token.get('athlete', {})
-        access_token = dados_token.get('access_token')
+        # SUCESSO NA TROCA DE CHAVES!
         
-        return jsonify({
-            "status": "CONEXAO_SUCESSO",
-            "mensagem": f"Olá, {athlete_info.get('firstname')}! Conectado ao AURA.",
-            "id_atleta": athlete_info.get('id'),
-            "token_teste": access_token  # Mostramos só para debug
-        })
+        # 1. Organizar os dados
+        athlete_info = dados_recebidos.get('athlete', {})
+        tokens = {
+            "access_token": dados_recebidos.get('access_token'),
+            "refresh_token": dados_recebidos.get('refresh_token'),
+            "expires_at": dados_recebidos.get('expires_at')
+        }
+        
+        # 2. Tentar Salvar no Banco de Dados
+        sucesso_banco = salvar_conexao_strava(athlete_info, tokens)
+        
+        if sucesso_banco:
+            # Retorna uma página HTML simples confirmando o sucesso
+            return """
+            <html>
+                <body style="background-color: #000; color: #0f0; font-family: sans-serif; text-align: center; padding-top: 50px;">
+                    <h1 style="font-size: 3rem;">✅ CONEXÃO ESTABELECIDA!</h1>
+                    <p style="font-size: 1.5rem; color: #fff;">O Mestre da Aura agora está sincronizado com o seu Strava.</p>
+                    <p style="color: #888;">Seus dados foram salvos com segurança no Banco de Dados.</p>
+                    <br>
+                    <p>Pode fechar esta janela e voltar ao App.</p>
+                </body>
+            </html>
+            """
+        else:
+            return jsonify({"erro": "Falha ao salvar no Banco de Dados (MongoDB)"}), 500
+            
     else:
-        return jsonify({"erro": "Falha ao autenticar com Strava", "detalhes": dados_token}), 400
+        return jsonify({"erro": "Falha ao autenticar com Strava", "detalhes": dados_recebidos}), 400
 
 # ========================================
 # 🌐 ROTAS DE PÁGINAS (FRONT-END ANTIGO)
