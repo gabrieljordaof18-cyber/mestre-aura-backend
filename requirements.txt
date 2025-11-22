@@ -2,6 +2,7 @@ flask
 pymongo[srv]
 python-dotenv
 openai
+requests
 dnspython
 gunicorn
 flask-cors
