@@ -18,7 +18,7 @@ CORS(app)
 app.register_blueprint(api_bp)
 
 # ===================================================
-# 🏃 ROTAS DE INTEGRAÇÃO: STRAVA (NOVO)
+# 🏃 ROTAS DE INTEGRAÇÃO: STRAVA (AUTENTICAÇÃO)
 # ===================================================
 
 @app.route('/auth/strava/login', methods=['GET'])
@@ -98,6 +98,47 @@ def strava_callback():
     else:
         return jsonify({"erro": "Falha ao autenticar com Strava", "detalhes": dados_recebidos}), 400
 
+# ===================================================
+# 🔔 WEBHOOK STRAVA (O OUVIDO DO SISTEMA) - NOVO!
+# ===================================================
+
+@app.route('/webhook', methods=['GET', 'POST'])
+def webhook():
+    """
+    Rota dupla:
+    1. GET: O Strava usa para verificar se existimos (Handshake).
+    2. POST: O Strava usa para enviar dados de treino (Notificação Real).
+    """
+    
+    # --- FASE 1: VERIFICAÇÃO (HANDSHAKE) ---
+    if request.method == 'GET':
+        # O Strava manda uns códigos para ver se somos nós mesmos
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+
+        # Senha que definimos para o Strava confiar em nós
+        VERIFY_TOKEN = "STRAVA_AURA_SECRET" 
+
+        if mode and token:
+            if mode == 'subscribe' and token == VERIFY_TOKEN:
+                print("✅ WEBHOOK VERIFICADO COM SUCESSO!")
+                # O Strava exige que retornemos esse JSON específico
+                return jsonify({"hub.challenge": challenge}), 200
+            else:
+                return jsonify({"erro": "Token de verificação inválido"}), 403
+        
+        return "Rota de Webhook ativa (Aguardando verificação)", 200
+
+    # --- FASE 2: RECEBER DADOS (POST) ---
+    if request.method == 'POST':
+        print("🔔 NOTIFICAÇÃO RECEBIDA DO STRAVA!")
+        dados_evento = request.json
+        print(dados_evento) # Mostra no terminal o que chegou
+        
+        # Por enquanto, só dizemos "Obrigado" ao Strava
+        return jsonify({"status": "EVENTO_RECEBIDO"}), 200
+
 # ========================================
 # 🌐 ROTAS DE PÁGINAS (FRONT-END ANTIGO)
 # ========================================
@@ -113,7 +154,7 @@ def mestre_app():
     return render_template("mestre_painel.html")
 
 # ===================================================
-# 🕵️ ROTA DE ESPIÃO (DEBUG) - NOVO
+# 🕵️ ROTA DE ESPIÃO (DEBUG)
 # ===================================================
 @app.route('/debug/usuarios', methods=['GET'])
 def ver_usuarios_banco():
