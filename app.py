@@ -3,7 +3,7 @@ import requests
 from flask import Flask, render_template, request, jsonify, redirect
 from flask_cors import CORS
 from rotas_api import api_bp  # Importa o teu módulo de rotas existente
-from data_manager import salvar_conexao_strava # <--- Importação da integração Strava
+from data_manager import salvar_conexao_strava # Importação da integração Strava
 
 # ===================================================
 # ⚙️ CONFIGURAÇÃO DO SERVIDOR FLASK
@@ -99,7 +99,7 @@ def strava_callback():
         return jsonify({"erro": "Falha ao autenticar com Strava", "detalhes": dados_recebidos}), 400
 
 # ===================================================
-# 🔔 WEBHOOK STRAVA (O OUVIDO DO SISTEMA) - NOVO!
+# 🔔 WEBHOOK STRAVA (O OUVIDO DO SISTEMA)
 # ===================================================
 
 @app.route('/webhook', methods=['GET', 'POST'])
@@ -112,31 +112,36 @@ def webhook():
     
     # --- FASE 1: VERIFICAÇÃO (HANDSHAKE) ---
     if request.method == 'GET':
-        # O Strava manda uns códigos para ver se somos nós mesmos
         mode = request.args.get('hub.mode')
         token = request.args.get('hub.verify_token')
         challenge = request.args.get('hub.challenge')
-
-        # Senha que definimos para o Strava confiar em nós
         VERIFY_TOKEN = "STRAVA_AURA_SECRET" 
 
         if mode and token:
             if mode == 'subscribe' and token == VERIFY_TOKEN:
-                print("✅ WEBHOOK VERIFICADO COM SUCESSO!")
-                # O Strava exige que retornemos esse JSON específico
                 return jsonify({"hub.challenge": challenge}), 200
             else:
-                return jsonify({"erro": "Token de verificação inválido"}), 403
-        
-        return "Rota de Webhook ativa (Aguardando verificação)", 200
+                return jsonify({"erro": "Token invalido"}), 403
+        return "Webhook ativo", 200
 
-    # --- FASE 2: RECEBER DADOS (POST) ---
+    # --- FASE 2: RECEBER DADOS E PROCESSAR (POST) ---
     if request.method == 'POST':
-        print("🔔 NOTIFICAÇÃO RECEBIDA DO STRAVA!")
         dados_evento = request.json
-        print(dados_evento) # Mostra no terminal o que chegou
         
-        # Por enquanto, só dizemos "Obrigado" ao Strava
+        # Aqui conectamos com o "Cérebro" (logic_strava.py)
+        try:
+            # Importamos aqui dentro para garantir que o arquivo existe
+            from logic_strava import processar_evento_webhook
+            
+            # Chama a função que calcula XP e salva no banco
+            processar_evento_webhook(dados_evento)
+            
+        except ImportError:
+            print("❌ ERRO: O arquivo logic_strava.py não foi encontrado!")
+        except Exception as e:
+            print(f"❌ Erro crítico no webhook: {e}")
+
+        # Sempre respondemos 200 OK rápido para o Strava
         return jsonify({"status": "EVENTO_RECEBIDO"}), 200
 
 # ========================================
@@ -160,9 +165,8 @@ def mestre_app():
 def ver_usuarios_banco():
     """
     Rota temporária para ver o que está salvo no MongoDB
-    sem precisar entrar no site do Atlas (que está travando).
+    sem precisar entrar no site do Atlas.
     """
-    # Importamos aqui dentro para evitar problemas de ciclo
     from data_manager import mongo_db
     
     if mongo_db is None:
@@ -172,7 +176,7 @@ def ver_usuarios_banco():
         # Busca todos os documentos na coleção 'usuarios'
         usuarios = list(mongo_db["usuarios"].find())
         
-        # Converte o _id (que é complexo) para string para poder exibir no JSON
+        # Converte o _id para string
         for user in usuarios:
             user['_id'] = str(user['_id'])
             
