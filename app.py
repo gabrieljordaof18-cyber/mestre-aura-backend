@@ -3,7 +3,7 @@ import requests
 from flask import Flask, render_template, request, jsonify, redirect
 from flask_cors import CORS
 from rotas_api import api_bp  # Importa o teu módulo de rotas existente
-from data_manager import salvar_conexao_strava # <--- NOVA IMPORTAÇÃO CRUCIAL
+from data_manager import salvar_conexao_strava # <--- Importação da integração Strava
 
 # ===================================================
 # ⚙️ CONFIGURAÇÃO DO SERVIDOR FLASK
@@ -111,6 +111,36 @@ def home():
 def mestre_app():
     """Rota para a interface do Mestre da Aura (usado pelo Base44)."""
     return render_template("mestre_painel.html")
+
+# ===================================================
+# 🕵️ ROTA DE ESPIÃO (DEBUG) - NOVO
+# ===================================================
+@app.route('/debug/usuarios', methods=['GET'])
+def ver_usuarios_banco():
+    """
+    Rota temporária para ver o que está salvo no MongoDB
+    sem precisar entrar no site do Atlas (que está travando).
+    """
+    # Importamos aqui dentro para evitar problemas de ciclo
+    from data_manager import mongo_db
+    
+    if mongo_db is None:
+        return jsonify({"erro": "MongoDB não conectado"}), 500
+
+    try:
+        # Busca todos os documentos na coleção 'usuarios'
+        usuarios = list(mongo_db["usuarios"].find())
+        
+        # Converte o _id (que é complexo) para string para poder exibir no JSON
+        for user in usuarios:
+            user['_id'] = str(user['_id'])
+            
+        return jsonify({
+            "total_usuarios_encontrados": len(usuarios),
+            "dados": usuarios
+        })
+    except Exception as e:
+        return jsonify({"erro": f"Erro ao ler banco: {str(e)}"}), 500
 
 # ===================================================
 # 🚀 INICIALIZAÇÃO DO SERVIDOR LOCAL
