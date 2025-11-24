@@ -93,7 +93,7 @@ def salvar_json(caminho_arquivo, dados):
     return sucesso_local or sucesso_nuvem
 
 # ==============================================================
-# 🏃 INTEGRAÇÃO STRAVA (NOVO)
+# 🏃 INTEGRAÇÃO STRAVA (LEITURA E ESCRITA)
 # ==============================================================
 
 def salvar_conexao_strava(dados_atleta, tokens):
@@ -136,6 +136,30 @@ def salvar_conexao_strava(dados_atleta, tokens):
     except Exception as e:
         print(f"❌ [DATA] Erro ao salvar dados Strava: {e}")
         return False
+
+def ler_dados_jogador():
+    """
+    Busca os dados do jogador principal na coleção 'usuarios'.
+    Retorna um dicionário com nome, xp e foto.
+    """
+    if mongo_db is None:
+        return None
+
+    try:
+        # Busca o primeiro usuário encontrado na coleção (Assumindo modo Single Player por enquanto)
+        usuario = mongo_db["usuarios"].find_one()
+        
+        if usuario:
+            # Converte ObjectId para string (o JSON não aceita ObjectId puro)
+            if "_id" in usuario:
+                usuario["_id"] = str(usuario["_id"])
+            return usuario
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"❌ Erro ao ler jogador: {e}")
+        return None
 
 
 # ==============================================================
