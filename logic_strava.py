@@ -3,81 +3,68 @@ from datetime import datetime
 from data_manager import mongo_db
 
 # =========================================================
-# 🧠 CÉREBRO DA INTEGRAÇÃO STRAVA
+# 🧠 CÉREBRO DA INTEGRAÇÃO STRAVA (VERSÃO 2.0 - GAMIFICADA)
 # =========================================================
 
 def processar_evento_webhook(dados_evento):
     """
-    Função principal chamada quando o Strava avisa de algo.
-    Orquestra todo o processo de ler, calcular e salvar.
+    Função principal.
+    Recebe o aviso -> Pega dados -> Aplica Regras de XP -> Salva.
     """
-    print(f"🔄 [LOGIC] Processando evento: {dados_evento}")
+    print(f"🔄 [LOGIC] Processando evento Strava...")
 
     # 1. FILTRO DE SEGURANÇA
-    # Só queremos saber de 'activity' (atividades) que foram 'create' (criadas agora).
-    # Ignoramos atualizações ou deleções por enquanto.
-    tipo_objeto = dados_evento.get('object_type') # ex: 'activity'
-    tipo_acao = dados_evento.get('aspect_type')   # ex: 'create'
-    atividade_id = dados_evento.get('object_id')  # ID do treino no Strava
-    strava_id_usuario = dados_evento.get('owner_id') # ID do atleta
-
-    if tipo_objeto != 'activity' or tipo_acao != 'create':
-        print("⏩ [LOGIC] Ignorando evento (não é criação de atividade).")
+    # Só processamos criações de novas atividades
+    if dados_evento.get('object_type') != 'activity' or dados_evento.get('aspect_type') != 'create':
         return False
 
+    strava_id_usuario = dados_evento.get('owner_id')
+    atividade_id = dados_evento.get('object_id')
+
     # 2. IDENTIFICAR O JOGADOR
-    # Vamos ao banco procurar quem tem esse strava_id
     if mongo_db is None:
-        print("❌ [LOGIC] Erro: Banco de dados desconectado.")
+        print("❌ Banco desconectado.")
         return False
 
     usuario = mongo_db["usuarios"].find_one({"strava_id": strava_id_usuario})
-    
     if not usuario:
-        print(f"⚠️ [LOGIC] Usuário Strava ID {strava_id_usuario} não encontrado no banco.")
+        print(f"⚠️ Usuário {strava_id_usuario} não encontrado.")
         return False
 
-    # 3. OBTER TOKEN DE ACESSO
-    # Precisamos da chave para ler os detalhes do treino
-    # NOTA: No futuro, faremos a renovação automática do token aqui se ele tiver expirado.
+    # 3. BUSCAR DETALHES DO TREINO NA API DO STRAVA
+    # (Aqui precisaríamos renovar o token se estivesse expirado, mas para MVP assumimos que está válido)
     access_token = usuario['tokens']['access_token']
-
-    # 4. BUSCAR DETALHES DO TREINO (A API REAL)
     headers = {'Authorization': f"Bearer {access_token}"}
-    url_atividade = f"https://www.strava.com/api/v3/activities/{atividade_id}"
+    url = f"https://www.strava.com/api/v3/activities/{atividade_id}"
     
-    response = requests.get(url_atividade, headers=headers)
-    
+    response = requests.get(url, headers=headers)
     if response.status_code != 200:
-        print(f"❌ [LOGIC] Erro ao ler atividade no Strava: {response.text}")
+        print(f"❌ Erro Strava API: {response.text}")
         return False
 
     dados_treino = response.json()
 
-    # 5. CÁLCULO DE XP (GAMIFICAÇÃO BÁSICA)
-    # Extraímos os dados principais
-    distancia_metros = dados_treino.get('distance', 0)
-    tempo_segundos = dados_treino.get('moving_time', 0)
-    tipo_esporte = dados_treino.get('type', 'Run')
-    
-    xp_ganho = calcular_xp(distancia_metros, tempo_segundos, tipo_esporte)
+    # 4. 🧙‍♂️ A MÁGICA: CALCULAR XP AVANÇADO
+    # Chamamos a nova função de regras complexas
+    xp_total, lista_bonus = calcular_xp_avancado(dados_treino)
 
-    print(f"💰 [LOGIC] Atividade processada! Distância: {distancia_metros}m | XP Gerado: {xp_ganho}")
+    print(f"💰 TREINO PROCESSADO! XP Total: {xp_total}")
+    print(f"📜 Bônus aplicados: {lista_bonus}")
 
-    # 6. SALVAR NO BANCO (HISTÓRICO E EVOLUÇÃO)
-    # Atualizamos o usuário somando o XP
+    # 5. SALVAR NO BANCO
+    # Atualizamos o XP Total e guardamos o histórico com os detalhes dos bônus
     mongo_db["usuarios"].update_one(
         {"strava_id": strava_id_usuario},
         {
-            "$inc": {"xp_total": xp_ganho}, # Incrementa o XP total
-            "$push": { # Adiciona ao histórico de atividades
+            "$inc": {"xp_total": xp_total},
+            "$push": { 
                 "historico_atividades": {
                     "id_atividade": atividade_id,
                     "data": datetime.now(),
-                    "tipo": tipo_esporte,
-                    "distancia": distancia_metros,
-                    "tempo": tempo_segundos,
-                    "xp_ganho": xp_ganho
+                    "nome_treino": dados_treino.get('name'),
+                    "distancia_km": round(dados_treino.get('distance', 0) / 1000, 2),
+                    "xp_ganho": xp_total,
+                    "bonus_conquistados": lista_bonus # <--- O App vai ler isso para mostrar as medalhas
                 }
             }
         }
@@ -85,19 +72,57 @@ def processar_evento_webhook(dados_evento):
     
     return True
 
-def calcular_xp(distancia, tempo, tipo):
+def calcular_xp_avancado(treino):
     """
-    Regra matemática simples para gerar XP.
-    - 1 km (1000m) = 50 XP
-    - 1 minuto (60s) = 2 XP (Bônus de esforço)
+    Aplica as regras de gamificação do AURA.
+    Retorna: (Inteiro XP, Lista de Strings com os motivos)
     """
-    xp_distancia = (distancia / 1000) * 50
-    xp_tempo = (tempo / 60) * 2
+    xp_acumulado = 0
+    motivos = []
+
+    # Extraindo dados (O Strava manda sempre em metros e segundos)
+    distancia_m = treino.get('distance', 0.0)
+    tempo_s = treino.get('moving_time', 0)
+    elevacao_m = treino.get('total_elevation_gain', 0.0)
+    velocidade_media_ms = treino.get('average_speed', 0.0)
     
-    total = int(xp_distancia + xp_tempo)
+    # Tratamento da Hora (Strava manda ex: "2025-11-24T06:30:00Z")
+    data_local = treino.get('start_date_local', '')
+    hora_treino = 12 # Valor padrão seguro
+    try:
+        if data_local:
+            # Pega apenas a hora (ex: 06) da string
+            hora_treino = int(data_local.split('T')[1].split(':')[0])
+    except:
+        pass
+
+    # --- REGRA 1: BASE DE DISTÂNCIA (10 XP por km) ---
+    distancia_km = distancia_m / 1000
+    xp_distancia = int(distancia_km * 10)
     
-    # Bônus para corridas
-    if tipo == 'Run':
-        total = int(total * 1.2) # 20% extra para corredores
+    # Garante no mínimo 10XP se correu alguma coisa
+    if xp_distancia < 10 and distancia_km > 0.1:
+        xp_distancia = 10
         
-    return total
+    xp_acumulado += xp_distancia
+    motivos.append(f"Distância ({distancia_km:.1f}km): +{xp_distancia}")
+
+    # --- REGRA 2: MADRUGADOR (Treino entre 04h e 08h) ---
+    if 4 <= hora_treino < 8:
+        xp_acumulado += 50
+        motivos.append("☀️ Madrugador: +50")
+
+    # --- REGRA 3: REI DA MONTANHA (Elevação > 50m) ---
+    if elevacao_m > 50:
+        # 2 XP por metro subido
+        xp_subida = int(elevacao_m * 2)
+        xp_acumulado += xp_subida
+        motivos.append(f"⛰️ Rei da Montanha ({elevacao_m:.0f}m): +{xp_subida}")
+
+    # --- REGRA 4: THE FLASH (Velocidade > 10km/h) ---
+    # 10 km/h é aproximadamente 2.78 m/s
+    if velocidade_media_ms > 2.78:
+        xp_acumulado += 30
+        motivos.append("⚡ The Flash (Ritmo Alto): +30")
+
+    return xp_acumulado, motivos
