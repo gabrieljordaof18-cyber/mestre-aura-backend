@@ -5,13 +5,13 @@ from datetime import datetime
 from data_manager import mongo_db
 
 # =========================================================
-# 🧠 CÉREBRO DA INTEGRAÇÃO STRAVA (VERSÃO 3.0 - BLINDADA)
+# 🧠 CÉREBRO DA INTEGRAÇÃO STRAVA (VERSÃO 4.0 - ECONOMIA)
 # =========================================================
 
 def processar_evento_webhook(dados_evento):
     """
     Função principal.
-    Recebe o aviso -> Garante Token Válido -> Pega dados -> Aplica XP -> Salva.
+    Recebe o aviso -> Garante Token Válido -> Pega dados -> Aplica XP e COINS -> Salva.
     """
     print(f"🔄 [LOGIC] Processando evento Strava...")
 
@@ -50,16 +50,28 @@ def processar_evento_webhook(dados_evento):
 
     dados_treino = response.json()
 
-    # 5. 🧙‍♂️ A MÁGICA: CALCULAR XP AVANÇADO
+    # 5. 🧙‍♂️ A MÁGICA: CALCULAR XP AVANÇADO E MOEDAS
     xp_total, lista_bonus = calcular_xp_avancado(dados_treino)
 
-    print(f"💰 TREINO PROCESSADO! XP Total: {xp_total}")
+    # --- REGRA ECONÔMICA (Aura Coins) ---
+    # Divisão por 20 para equilibrar com a meta de R$10,00/semana
+    coins_ganhas = int(xp_total / 20)
+    
+    # Garante pelo menos 1 moeda se houve esforço (>0 XP)
+    if xp_total > 0 and coins_ganhas < 1:
+        coins_ganhas = 1
+
+    print(f"💰 TREINO PROCESSADO! XP: {xp_total} | Coins: {coins_ganhas}")
 
     # 6. SALVAR NO BANCO
     mongo_db["usuarios"].update_one(
         {"strava_id": strava_id_usuario},
         {
-            "$inc": {"xp_total": xp_total},
+            # $inc soma os valores ao que o usuário já tem
+            "$inc": {
+                "xp_total": xp_total,
+                "aura_coins": coins_ganhas # <--- O SALÁRIO DO JOGADOR
+            },
             "$push": { 
                 "historico_atividades": {
                     "id_atividade": atividade_id,
@@ -67,6 +79,7 @@ def processar_evento_webhook(dados_evento):
                     "nome_treino": dados_treino.get('name'),
                     "distancia_km": round(dados_treino.get('distance', 0) / 1000, 2),
                     "xp_ganho": xp_total,
+                    "coins_ganhas": coins_ganhas, # <--- Histórico financeiro
                     "bonus_conquistados": lista_bonus
                 }
             }
