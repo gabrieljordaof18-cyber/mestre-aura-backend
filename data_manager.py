@@ -93,7 +93,7 @@ def salvar_json(caminho_arquivo, dados):
     return sucesso_local or sucesso_nuvem
 
 # ==============================================================
-# 🏃 INTEGRAÇÃO STRAVA (LEITURA E ESCRITA)
+# 🏃 INTEGRAÇÃO STRAVA & RANKING (LEITURA E ESCRITA)
 # ==============================================================
 
 def salvar_conexao_strava(dados_atleta, tokens):
@@ -160,6 +160,32 @@ def ler_dados_jogador():
     except Exception as e:
         print(f"❌ Erro ao ler jogador: {e}")
         return None
+
+def obter_ranking_global(limite=50):
+    """
+    Retorna a lista dos Top Jogadores ordenada por XP.
+    Essa função é essencial para a rota /cla/ranking.
+    """
+    if mongo_db is None: return []
+    
+    try:
+        # Busca no banco, ordena por xp_total descrescente (-1) e limita
+        cursor = mongo_db["usuarios"].find(
+            {}, # Filtro vazio = pega todos
+            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0} # Só traz estes campos
+        ).sort("xp_total", -1).limit(limite)
+        
+        ranking = list(cursor)
+        
+        # Adiciona a posição (1º, 2º, 3º) manualmente
+        for i, jogador in enumerate(ranking):
+            jogador['posicao'] = i + 1
+            if 'xp_total' not in jogador: jogador['xp_total'] = 0
+            
+        return ranking
+    except Exception as e:
+        print(f"❌ Erro ranking: {e}")
+        return []
 
 
 # ==============================================================
