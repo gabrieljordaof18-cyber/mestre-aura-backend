@@ -17,61 +17,123 @@ from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
 
-# --- NOVA IMPORTAÇÃO (INTEGRAÇÃO MONGODB/STRAVA) ---
-from data_manager import ler_dados_jogador
+# --- IMPORTAÇÃO (INTEGRAÇÃO MONGODB/STRAVA/RANKING) ---
+from data_manager import ler_dados_jogador, obter_ranking_global
 
-# Definimos o Blueprint com prefixo '/api'. 
-# Assim, todas as rotas abaixo começam com /api (ex: /api/comando)
+# Definimos o Blueprint com prefixo '/api'
 api_bp = Blueprint('api_bp', __name__, url_prefix='/api')
 
 # ===================================================
-# 📊 ROTA DE STATUS DO JOGADOR (XP REAL & NÍVEL) - NOVO!
+# 📊 ROTA DE STATUS DO JOGADOR (XP, NÍVEL E MOEDAS)
 # ===================================================
 @api_bp.route('/usuario/status', methods=['GET'])
 def get_status_jogador():
     """
-    Rota que o Base44 vai chamar para saber quanto XP o jogador tem.
-    Lê direto do MongoDB (via data_manager) e calcula o nível.
+    Retorna XP, Nível e Aura Coins para o App.
     """
-    # 1. Busca os dados reais no MongoDB
     dados = ler_dados_jogador()
     
     if not dados:
-        # Se não tiver ninguém no banco, retorna dados zerados
         return jsonify({
             "nome": "Iniciado",
             "xp_total": 0,
+            "aura_coins": 0,
             "nivel": 1,
             "xp_necessario_proximo": 1000,
             "barra_progresso": 0,
             "foto": ""
         })
 
-    # 2. Extrai o XP Real e Nome
+    # Extrai dados
     xp_atual = dados.get("xp_total", 0)
+    aura_coins = dados.get("aura_coins", 0)
     nome = dados.get("nome", "Atleta")
     foto = dados.get("foto_perfil", "")
 
-    # 3. Matemática do Nível (Regra: 1 Nível a cada 1000 XP)
+    # Matemática do Nível
     XP_POR_NIVEL = 1000
-    
     nivel_atual = int(xp_atual / XP_POR_NIVEL) + 1
     xp_restante_para_proximo = XP_POR_NIVEL - (xp_atual % XP_POR_NIVEL)
     
-    # Calcula a porcentagem da barra de progresso (0 a 100)
     xp_nesse_nivel = xp_atual % XP_POR_NIVEL
     progresso_percent = int((xp_nesse_nivel / XP_POR_NIVEL) * 100)
 
-    # 4. Retorna o JSON estruturado para o App
     return jsonify({
         "nome": nome,
         "foto": foto,
         "xp_total": xp_atual,
+        "aura_coins": aura_coins,
         "nivel": nivel_atual,
         "xp_necessario_proximo": xp_restante_para_proximo,
         "barra_progresso": progresso_percent,
         "strava_conectado": True
     })
+
+# ===================================================
+# 🏆 ROTA DE RANKING (CLÃ)
+# ===================================================
+@api_bp.route('/cla/ranking', methods=['GET'])
+def get_ranking_cla():
+    """
+    Retorna a lista dos Top Jogadores ordenados por XP.
+    """
+    ranking = obter_ranking_global(limite=20) 
+    return jsonify({"ranking": ranking})
+
+# ===================================================
+# 🕵️ ROTA ANTI-FRAUDE (O DETETIVE) - NOVO!
+# ===================================================
+@api_bp.route('/antifraude/validar', methods=['POST'])
+def validar_atividade():
+    """
+    Recebe uma data (YYYY-MM-DD) e verifica se existe 
+    atividade real do Strava nesse dia no histórico do usuário.
+    """
+    try:
+        dados_input = request.get_json(force=True)
+        data_declarada_str = dados_input.get('data') # Ex: "2025-11-27"
+        
+        # 1. Busca os dados do usuário e seu histórico no Mongo
+        usuario = ler_dados_jogador()
+        
+        if not usuario:
+            return jsonify({"aprovado": False, "motivo": "Usuário não encontrado no banco de dados."}), 404
+
+        historico = usuario.get('historico_atividades', [])
+        
+        # 2. O Grande Loop: Procura se TEM prova no Strava
+        encontrou_prova = False
+        
+        for atividade in historico:
+            data_real = atividade.get('data')
+            
+            # Tratamento de formato de data (pode vir como string ou objeto datetime)
+            if isinstance(data_real, str):
+                data_real_str = data_real[:10] # Pega YYYY-MM-DD
+            elif isinstance(data_real, datetime):
+                data_real_str = data_real.strftime('%Y-%m-%d')
+            else:
+                continue # Pula se formato desconhecido
+                
+            if data_real_str == data_declarada_str:
+                encontrou_prova = True
+                break
+        
+        # 3. O Veredito
+        if encontrou_prova:
+            return jsonify({
+                "aprovado": True, 
+                "msg": "Validação biométrica confirmada via Strava."
+            })
+        else:
+            return jsonify({
+                "aprovado": False, 
+                "motivo": "Nenhuma atividade encontrada no seu Strava/Wearable nesta data. Sincronize seu relógio e tente novamente."
+            })
+            
+    except Exception as e:
+        print(f"Erro na validação antifraude: {e}")
+        return jsonify({"aprovado": False, "motivo": "Erro interno na verificação."}), 500
 
 # ============================================
 # 🤖 CHAT (Mestre da AURA)
@@ -86,7 +148,7 @@ def comando():
     return jsonify({"resposta": resposta})
 
 # ============================================
-# 👤 JOGADOR E DADOS (LEGADO/COMPATIBILIDADE)
+# 👤 JOGADOR E DADOS (LEGADO)
 # ============================================
 @api_bp.route('/status_jogador')
 def status_jogador():
