@@ -33,5 +33,75 @@
         "xp": 60,
         "categoria": "treino",
         "tipo_verificacao": "passos"
+    },
+    {
+        "id": "nutri_01",
+        "descricao": "Zero açúcar adicionado hoje",
+        "xp": 120,
+        "categoria": "saude",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "treino_03",
+        "descricao": "Alongamento matinal (10 min)",
+        "xp": 30,
+        "categoria": "treino",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "mente_02",
+        "descricao": "Leitura de 10 páginas",
+        "xp": 50,
+        "categoria": "mente",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "descanso_02",
+        "descricao": "Sem telas 1h antes de dormir",
+        "xp": 80,
+        "categoria": "descanso",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "saude_01",
+        "descricao": "Banho gelado (exposição ao frio)",
+        "xp": 70,
+        "categoria": "saude",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "treino_04",
+        "descricao": "Corrida de 5km",
+        "xp": 200,
+        "categoria": "treino",
+        "tipo_verificacao": "sensor_gps"
+    },
+    {
+        "id": "nutri_02",
+        "descricao": "Comer 3 porções de frutas",
+        "xp": 40,
+        "categoria": "saude",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "mente_03",
+        "descricao": "Diário de Gratidão (3 itens)",
+        "xp": 45,
+        "categoria": "mente",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "saude_02",
+        "descricao": "Exposição solar matinal (15 min)",
+        "xp": 50,
+        "categoria": "saude",
+        "tipo_verificacao": "manual"
+    },
+    {
+        "id": "treino_05",
+        "descricao": "Treino de Força / Musculação",
+        "xp": 100,
+        "categoria": "treino",
+        "tipo_verificacao": "manual"
     }
 ]

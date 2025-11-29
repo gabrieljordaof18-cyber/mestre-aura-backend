@@ -4,11 +4,12 @@
 <div class="mestre-wrapper">
 
   <div class="panel-box" id="painel-status">
-    <div class="titulo">Nome: <span style="color:#fff">Gabriel</span></div>
+    <div class="titulo">Atleta: <span id="nome-usuario" style="color:#fff">...</span></div>
     
-    <div class="small" style="margin-top:10px; margin-bottom:5px">SENSORES</div>
+    <div class="small" style="margin-top:10px; margin-bottom:5px">SENSORES CONECTADOS</div>
     <div class="sensor-row"><span>Apple Watch</span> <span id="apple_status">...</span></div>
     <div class="sensor-row"><span>Garmin</span> <span id="garmin_status">...</span></div>
+    <div class="sensor-row"><span>Strava</span> <span id="strava_status">...</span></div>
     
     <div class="small" style="margin-top:10px; margin-bottom:5px">FISIOLOGIA</div>
     <div class="sensor-row"><span>⚡ Energia</span> <span id="energia">--</span></div>
@@ -21,7 +22,7 @@
     <div id="mensagens">
         </div>
     <div class="input-area">
-        <input type="text" id="msg" placeholder="Fale com a AURA..." autocomplete="off">
+        <input type="text" id="msg" placeholder="Pergunte ao Mestre..." autocomplete="off">
         <button class="enviar" onclick="enviarMensagem()">Enviar</button>
     </div>
   </div>
@@ -32,15 +33,21 @@
   </div>
 
   <div class="panel-box">
-    <div style="display:flex; justify-content:space-between;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
         <div class="titulo">Nível <span id="nivel-num">1</span></div>
-        <div class="small" id="xp-necessario">Meta: --</div>
+        <div class="titulo" style="font-size:0.9em; color:#FFD700; border:1px solid #FFD700; padding:2px 8px; border-radius:10px;">
+            💎 <span id="aura-coins">0</span>
+        </div>
     </div>
     
     <div class="xp-container">
         <div class="xp-fill" id="xp-bar"></div>
     </div>
-    <div class="small" style="text-align:right;" id="xp-atual">0 XP</div>
+    
+    <div style="display:flex; justify-content:space-between;">
+        <div class="small" id="xp-atual">0 XP</div>
+        <div class="small" id="xp-necessario">Meta: --</div>
+    </div>
 
     <hr style="border:0; border-top:1px solid var(--gold-dim); margin: 10px 0;">
     
