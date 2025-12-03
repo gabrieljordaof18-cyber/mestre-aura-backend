@@ -93,7 +93,7 @@ def processar_comando(mensagem: str) -> str:
                 resp = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=mensagens_para_enviar,
-                    max_tokens=150,
+                    max_tokens=1000,
                     temperature=0.7
                 )
                 texto_resposta = resp.choices[0].message.content.strip()
