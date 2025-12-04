@@ -18,6 +18,9 @@ XP_SONO_BOM = 30            # > 6h
 XP_TREINO_INSANO = 100      # Intensidade > 80%
 XP_TREINO_BOM = 50          # Intensidade > 50%
 
+# Economia Premium
+CRISTAIS_POR_LEVEL_UP = 10  # Recompensa fixa ao subir de nível
+
 # ======================================================
 # 🎮 LÓGICA CENTRAL DE GAMIFICAÇÃO
 # ======================================================
@@ -57,7 +60,6 @@ def gerar_missoes_diarias() -> List[Dict[str, Any]]:
         })
 
     # 4. Salvar na Memória Global (Histórico)
-    # Aqui apenas adicionamos, o histórico serve de log eterno
     mg = carregar_memoria_global()
     if "gamificacao" not in mg: mg["gamificacao"] = {}
     if "missoes_diarias_historico" not in mg["gamificacao"]: 
@@ -104,7 +106,7 @@ def calcular_xp_fisiologico(dados_fisiologicos: Dict[str, Any]) -> int:
 
 def aplicar_xp(quantidade: int) -> Dict[str, Any]:
     """
-    Adiciona XP ao jogador, verifica Level Up e lida com 'carry over' de XP.
+    Adiciona XP ao jogador, verifica Level Up e concede bônus de Cristais Aura.
     """
     memoria = carregar_memoria()
     jogador = memoria.get("jogador", {})
@@ -112,20 +114,27 @@ def aplicar_xp(quantidade: int) -> Dict[str, Any]:
     # Garante integridade dos dados
     if "experiencia" not in jogador: jogador["experiencia"] = 0
     if "nivel" not in jogador: jogador["nivel"] = 1
+    if "saldo_cristais" not in jogador: jogador["saldo_cristais"] = 0 # Garante que o campo existe
     
     # Adiciona XP
     jogador["experiencia"] += quantidade
     subiu_de_nivel = False
+    cristais_ganhos_total = 0
     
-    # Loop de Level Up (Permite subir múltiplos níveis de uma vez se ganhar muito XP)
+    # Loop de Level Up (Permite subir múltiplos níveis de uma vez)
     while True:
         xp_para_proximo = XP_BASE_NIVEL * jogador["nivel"]
         
         if jogador["experiencia"] >= xp_para_proximo:
-            jogador["experiencia"] -= xp_para_proximo # Carry Over (Guarda o troco)
+            jogador["experiencia"] -= xp_para_proximo # Carry Over
             jogador["nivel"] += 1
+            
+            # BÔNUS DE LEVEL UP (ECONOMIA PREMIUM)
+            jogador["saldo_cristais"] += CRISTAIS_POR_LEVEL_UP
+            cristais_ganhos_total += CRISTAIS_POR_LEVEL_UP
+            
             subiu_de_nivel = True
-            logger.info(f"🆙 LEVEL UP! Jogador alcançou nível {jogador['nivel']}")
+            logger.info(f"🆙 LEVEL UP! Nível {jogador['nivel']} | +{CRISTAIS_POR_LEVEL_UP} Cristais")
         else:
             break
             
@@ -136,7 +145,8 @@ def aplicar_xp(quantidade: int) -> Dict[str, Any]:
     return {
         "novo_xp": jogador["experiencia"], 
         "novo_nivel": jogador["nivel"], 
-        "subiu": subiu_de_nivel
+        "subiu": subiu_de_nivel,
+        "cristais_ganhos": cristais_ganhos_total
     }
 
 # --- Função Auxiliar Local ---
