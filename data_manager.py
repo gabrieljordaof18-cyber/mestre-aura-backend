@@ -187,6 +187,62 @@ def obter_ranking_global(limite=50):
         print(f"❌ Erro ranking: {e}")
         return []
 
+# ==============================================================
+# 🧠 MEMÓRIA ESTRUTURADA (DIETA & TREINO - NOVO)
+# ==============================================================
+
+def atualizar_plano_mestre(tipo_plano, conteudo):
+    """
+    Atualiza especificamente a dieta ou o treino do usuário.
+    tipo_plano: "dieta" ou "treino"
+    conteudo: Dicionário (JSON) com os dados estruturados.
+    """
+    if mongo_db is None:
+        print("⚠️ [DATA] MongoDB não conectado. Impossível salvar plano.")
+        return False
+
+    try:
+        # Define o campo a ser atualizado no MongoDB
+        campo_banco = f"plano_{tipo_plano}" # vira "plano_dieta" ou "plano_treino"
+        
+        # Busca o usuário (Assumindo single player/primeiro usuário como na função ler_dados_jogador)
+        usuario = mongo_db["usuarios"].find_one()
+        
+        if usuario:
+            mongo_db["usuarios"].update_one(
+                {"_id": usuario["_id"]},
+                {
+                    "$set": {
+                        campo_banco: conteudo,
+                        f"data_atualizacao_{tipo_plano}": str(datetime.now())
+                    }
+                }
+            )
+            print(f"✅ [DATA] {tipo_plano.capitalize()} atualizado com sucesso!")
+            return True
+        else:
+            print("❌ [DATA] Usuário não encontrado para salvar plano.")
+            return False
+            
+    except Exception as e:
+        print(f"❌ [DATA] Erro ao atualizar plano: {e}")
+        return False
+
+def ler_plano_mestre(tipo_plano):
+    """
+    Retorna apenas o JSON do plano solicitado (dieta ou treino).
+    """
+    if mongo_db is None: return {}
+    
+    try:
+        usuario = mongo_db["usuarios"].find_one()
+        if usuario:
+            campo = f"plano_{tipo_plano}"
+            return usuario.get(campo, {}) # Retorna vazio se não tiver plano ainda
+        return {}
+    except Exception as e:
+        print(f"❌ Erro ao ler plano: {e}")
+        return {}
 
 # ==============================================================
 # ⚙️ FUNÇÕES AUXILIARES INTERNAS

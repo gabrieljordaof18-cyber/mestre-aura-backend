@@ -6,7 +6,7 @@ from flask import request, jsonify, Blueprint
 # Importações Internas
 from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
 from data_global import carregar_memoria_global
-from data_manager import ler_dados_jogador, obter_ranking_global
+from data_manager import ler_dados_jogador, obter_ranking_global, ler_plano_mestre # <--- ATUALIZADO AQUI
 from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
@@ -210,3 +210,30 @@ def sincronizar_dinamico():
     calcular_e_atualizar_equilibrio()
     
     return jsonify({"dados": novos_dados})
+
+# ===================================================
+# 📂 GESTÃO DE PLANOS (DIETA & TREINO - NOVO)
+# ===================================================
+
+@api_bp.route('/usuario/planos', methods=['GET'])
+def get_plano_usuario():
+    """
+    Rota chamada quando o usuário clica no botão DIETA ou TREINO.
+    Exemplo de uso: /api/usuario/planos?tipo=dieta
+    """
+    try:
+        tipo = request.args.get('tipo') # 'dieta' ou 'treino'
+        
+        if tipo not in ['dieta', 'treino']:
+            return jsonify({"erro": "Tipo inválido. Use 'dieta' ou 'treino'."}), 400
+            
+        dados_plano = ler_plano_mestre(tipo)
+        
+        return jsonify({
+            "tipo": tipo,
+            "dados": dados_plano
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar plano: {e}")
+        return jsonify({"erro": "Falha ao carregar plano."}), 500
