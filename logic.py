@@ -11,7 +11,7 @@ load_dotenv()
 
 # Importações internas
 from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
-from data_manager import atualizar_plano_mestre # <--- NOVA IMPORTAÇÃO
+from data_manager import atualizar_plano_mestre
 from logic_gamificacao import gerar_missoes_diarias
 from logic_feedback import gerar_feedback_emocional
 
@@ -34,24 +34,47 @@ else:
     logger.warning("⚠️ OPENAI_API_KEY não encontrada no .env")
 
 # ======================================================
-# 🛠️ DEFINIÇÃO DAS FERRAMENTAS (FUNCTION CALLING)
+# 🛠️ DEFINIÇÃO DAS FERRAMENTAS (ESTRUTURA AURA PRO)
 # ======================================================
+
+# Schema reutilizável para itens de treino (Grid System)
+SCHEMA_EXERCICIO = {
+    "type": "object",
+    "properties": {
+        "exercicio": {"type": "string", "description": "Nome do exercício ou modalidade (Ex: Corrida, Supino)"},
+        "series": {"type": "string", "description": "Ex: 3x, 4x (Deixe vazio se for cardio contínuo)"},
+        "reps": {"type": "string", "description": "Ex: 12, 10-12, Falha (Deixe vazio se for cardio)"},
+        "duracao": {"type": "string", "description": "Tempo ou distância. Ex: 20min, 5km, Cadência 2020"}
+    },
+    "required": ["exercicio"]
+}
 
 TOOLS_AURA = [
     {
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva ou atualiza o plano alimentar (dieta) completo do usuário no banco de dados.",
+            "description": "Salva o plano alimentar detalhado com contagem calórica.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "resumo_objetivo": {"type": "string", "description": "Ex: Hipertrofia limpa, 2800kcal"},
-                    "cafe_da_manha": {"type": "string", "description": "Itens do café da manhã"},
-                    "almoco": {"type": "string", "description": "Itens do almoço"},
-                    "lanche": {"type": "string", "description": "Itens do lanche da tarde/pré-treino"},
-                    "jantar": {"type": "string", "description": "Itens do jantar"},
-                    "ceia_ou_suplementos": {"type": "string", "description": "Última refeição ou suplementação"}
+                    "resumo_objetivo": {"type": "string", "description": "Ex: Cutting Agressivo, 1800kcal"},
+                    "kcal_total": {"type": "string", "description": "Soma total das calorias do dia"},
+                    
+                    "cafe_da_manha": {"type": "string", "description": "Alimentos da refeição"},
+                    "kcal_cafe_da_manha": {"type": "string", "description": "Calorias desta refeição (Ex: 450)"},
+                    
+                    "almoco": {"type": "string"},
+                    "kcal_almoco": {"type": "string"},
+                    
+                    "lanche": {"type": "string"},
+                    "kcal_lanche": {"type": "string"},
+                    
+                    "jantar": {"type": "string"},
+                    "kcal_jantar": {"type": "string"},
+                    
+                    "ceia_ou_suplementos": {"type": "string"},
+                    "kcal_ceia": {"type": "string"}
                 },
                 "required": ["resumo_objetivo", "cafe_da_manha", "almoco", "jantar"]
             }
@@ -61,18 +84,39 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "Salva ou atualiza a rotina de treinos do usuário no banco de dados.",
+            "description": "Salva a rotina de treinos estruturada em tabela (Exercício, Séries, Reps, Duração).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "foco_atual": {"type": "string", "description": "Ex: Força, Resistência, ABC..."},
-                    "segunda": {"type": "string"},
-                    "terca": {"type": "string"},
-                    "quarta": {"type": "string"},
-                    "quinta": {"type": "string"},
-                    "sexta": {"type": "string"},
-                    "sabado_domingo": {"type": "string", "description": "Treino de fim de semana ou descanso"},
-                    "dicas_tecnicas": {"type": "string", "description": "Dica geral para a semana"}
+                    "foco_atual": {"type": "string", "description": "Ex: Hipertrofia, Resistência, Híbrido"},
+                    "dicas_tecnicas": {"type": "string", "description": "Conselho técnico do coach para a semana"},
+                    
+                    "segunda": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO,
+                        "description": "Lista de exercícios de Segunda"
+                    },
+                    "terca": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO
+                    },
+                    "quarta": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO
+                    },
+                    "quinta": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO
+                    },
+                    "sexta": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO
+                    },
+                    "sabado_domingo": {
+                        "type": "array",
+                        "items": SCHEMA_EXERCICIO,
+                        "description": "Treino de fim de semana ou descanso ativo"
+                    }
                 },
                 "required": ["foco_atual", "segunda", "terca", "quarta", "quinta", "sexta"]
             }
@@ -101,15 +145,18 @@ def processar_comando(mensagem: str) -> str:
     coins = jogador.get("saldo_coins", 0)
 
     # 2. Monta o Prompt de Sistema (A Personalidade)
+    # ATUALIZADO: Instrução explícita para usar as tabelas detalhadas
     prompt_sistema = {
         "role": "system", 
         "content": (
             f"Você é o Mestre da AURA, uma IA de alta performance esportiva.\n"
             f"Atleta: {jogador.get('nome', 'Atleta')}\n"
             f"Status: Nível {nivel} | {xp} XP | 💎 {coins} Aura Coins\n"
-            f"Biometria Atual: {dados_fisiologicos}\n"
-            f"PODER ESPECIAL: Se o usuário pedir para criar/mudar dieta ou treino, CHAME a função correspondente (salvar_nova_dieta ou salvar_novo_treino) imediatamente.\n"
-            f"Diretriz: Seja breve, técnico e motivador."
+            f"Biometria Atual: {dados_fisiologicos}\n\n"
+            f"REGRAS DE CRIAÇÃO:\n"
+            f"1. Se o usuário pedir DIETA: Calcule as calorias de cada refeição e chame 'salvar_nova_dieta'.\n"
+            f"2. Se o usuário pedir TREINO: Estruture EXATAMENTE preenchendo as colunas de Séries, Reps e Duração para cada exercício na função 'salvar_novo_treino'.\n"
+            f"3. Seja breve no chat, pois o detalhe vai para os Cards Visuais.\n"
         )
     }
 
@@ -146,7 +193,7 @@ def processar_comando(mensagem: str) -> str:
                     messages=mensagens_para_enviar,
                     tools=TOOLS_AURA,
                     tool_choice="auto",
-                    max_tokens=1000,
+                    max_tokens=1500, # Aumentei um pouco para caber os JSONs maiores
                     temperature=0.7
                 )
                 
@@ -165,13 +212,13 @@ def processar_comando(mensagem: str) -> str:
                         # Executa a função real no Backend
                         if func_name == "salvar_nova_dieta":
                             if atualizar_plano_mestre("dieta", args):
-                                resultado_tool = "✅ Dieta salva no banco de dados com sucesso! Avise o usuário para clicar no botão DIETA."
+                                resultado_tool = "✅ Dieta (com Kcal) salva! Avise o usuário para ver o card de Dieta."
                             else:
                                 resultado_tool = "Erro ao gravar no banco."
                                 
                         elif func_name == "salvar_novo_treino":
                             if atualizar_plano_mestre("treino", args):
-                                resultado_tool = "✅ Treino salvo no banco de dados com sucesso! Avise o usuário para clicar no botão TREINO."
+                                resultado_tool = "✅ Treino (Tabela Aura Grid) salvo! Avise o usuário para ver o card de Treino."
                             else:
                                 resultado_tool = "Erro ao gravar no banco."
 
