@@ -37,14 +37,13 @@ else:
 # 🛠️ DEFINIÇÃO DAS FERRAMENTAS (ESTRUTURA AURA PRO)
 # ======================================================
 
-# Schema reutilizável para itens de treino (Grid System)
 SCHEMA_EXERCICIO = {
     "type": "object",
     "properties": {
-        "exercicio": {"type": "string", "description": "Nome do exercício ou modalidade (Ex: Corrida, Supino)"},
-        "series": {"type": "string", "description": "Ex: 3x, 4x (Deixe vazio se for cardio contínuo)"},
-        "reps": {"type": "string", "description": "Ex: 12, 10-12, Falha (Deixe vazio se for cardio)"},
-        "duracao": {"type": "string", "description": "Tempo ou distância. Ex: 20min, 5km, Cadência 2020"}
+        "exercicio": {"type": "string", "description": "Nome DETALHADO do exercício. Para Cardio: especifique o tipo (ex: Corrida Intervalada, Longão, Natação Técnica)."},
+        "series": {"type": "string", "description": "Ex: 4x (Deixe vazio apenas se for cardio contínuo)"},
+        "reps": {"type": "string", "description": "Ex: 10-12, Falha, 15 (Deixe vazio se for cardio)"},
+        "duracao": {"type": "string", "description": "Tempo, distância ou cadência. Ex: 45min, 5km, Tiro 400m"}
     },
     "required": ["exercicio"]
 }
@@ -54,25 +53,20 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva o plano alimentar detalhado com contagem calórica.",
+            "description": "Salva o plano alimentar detalhado.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "resumo_objetivo": {"type": "string", "description": "Ex: Cutting Agressivo, 1800kcal"},
-                    "kcal_total": {"type": "string", "description": "Soma total das calorias do dia"},
-                    
-                    "cafe_da_manha": {"type": "string", "description": "Alimentos da refeição"},
-                    "kcal_cafe_da_manha": {"type": "string", "description": "Calorias desta refeição (Ex: 450)"},
-                    
+                    "resumo_objetivo": {"type": "string", "description": "Ex: Cutting, 2000kcal"},
+                    "kcal_total": {"type": "string"},
+                    "cafe_da_manha": {"type": "string"},
+                    "kcal_cafe_da_manha": {"type": "string"},
                     "almoco": {"type": "string"},
                     "kcal_almoco": {"type": "string"},
-                    
                     "lanche": {"type": "string"},
                     "kcal_lanche": {"type": "string"},
-                    
                     "jantar": {"type": "string"},
                     "kcal_jantar": {"type": "string"},
-                    
                     "ceia_ou_suplementos": {"type": "string"},
                     "kcal_ceia": {"type": "string"}
                 },
@@ -88,35 +82,14 @@ TOOLS_AURA = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "foco_atual": {"type": "string", "description": "Ex: Hipertrofia, Resistência, Híbrido"},
-                    "dicas_tecnicas": {"type": "string", "description": "Conselho técnico do coach para a semana"},
-                    
-                    "segunda": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO,
-                        "description": "Lista de exercícios de Segunda"
-                    },
-                    "terca": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO
-                    },
-                    "quarta": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO
-                    },
-                    "quinta": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO
-                    },
-                    "sexta": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO
-                    },
-                    "sabado_domingo": {
-                        "type": "array",
-                        "items": SCHEMA_EXERCICIO,
-                        "description": "Treino de fim de semana ou descanso ativo"
-                    }
+                    "foco_atual": {"type": "string", "description": "Ex: Hipertrofia, Maratona, Híbrido"},
+                    "dicas_tecnicas": {"type": "string", "description": "Dica técnica sobre execução ou intensidade"},
+                    "segunda": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "terca": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "quarta": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "quinta": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "sexta": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "sabado_domingo": {"type": "array", "items": SCHEMA_EXERCICIO}
                 },
                 "required": ["foco_atual", "segunda", "terca", "quarta", "quinta", "sexta"]
             }
@@ -145,18 +118,17 @@ def processar_comando(mensagem: str) -> str:
     coins = jogador.get("saldo_coins", 0)
 
     # 2. Monta o Prompt de Sistema (A Personalidade)
-    # ATUALIZADO: Instrução explícita para usar as tabelas detalhadas
     prompt_sistema = {
         "role": "system", 
         "content": (
-            f"Você é o Mestre da AURA, uma IA de alta performance esportiva.\n"
-            f"Atleta: {jogador.get('nome', 'Atleta')}\n"
-            f"Status: Nível {nivel} | {xp} XP | 💎 {coins} Aura Coins\n"
-            f"Biometria Atual: {dados_fisiologicos}\n\n"
-            f"REGRAS DE CRIAÇÃO:\n"
-            f"1. Se o usuário pedir DIETA: Calcule as calorias de cada refeição e chame 'salvar_nova_dieta'.\n"
-            f"2. Se o usuário pedir TREINO: Estruture EXATAMENTE preenchendo as colunas de Séries, Reps e Duração para cada exercício na função 'salvar_novo_treino'.\n"
-            f"3. Seja breve no chat, pois o detalhe vai para os Cards Visuais.\n"
+            f"Você é o Mestre da AURA, treinador de elite.\n"
+            f"Atleta: {jogador.get('nome', 'Atleta')} | Nível {nivel}\n\n"
+            f"REGRAS CRÍTICAS PARA CRIAÇÃO DE TREINO:\n"
+            f"1. VOLUME ADAPTÁVEL: O número de exercícios deve seguir o pedido do usuário. Se ele pedir 'rápido', use 3-4. Se pedir 'pesado' ou 'fullbody', use 8-10. Se não especificar, use o padrão 5-7.\n"
+            f"2. CARDIO INTELIGENTE: Nunca use apenas 'Corrida'. Especifique: 'Corrida Leve (Z2)', 'Tiros de 400m', 'Fartlek'. Use a coluna 'Duração' para tempo/distância.\n"
+            f"3. ESTRUTURA: Preencha Séries e Reps para musculação. Preencha Duração para Cardio.\n"
+            f"4. ATLETA MISTO: Se o usuário for híbrido, inclua musculação E cardio no mesmo dia conforme necessário.\n"
+            f"5. DIETA: Calcule as calorias de cada refeição ao criar dietas.\n"
         )
     }
 
@@ -193,7 +165,7 @@ def processar_comando(mensagem: str) -> str:
                     messages=mensagens_para_enviar,
                     tools=TOOLS_AURA,
                     tool_choice="auto",
-                    max_tokens=1500, # Aumentei um pouco para caber os JSONs maiores
+                    max_tokens=2000, # Aumentei para suportar treinos longos (Fullbody)
                     temperature=0.7
                 )
                 
