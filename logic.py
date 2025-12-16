@@ -52,7 +52,7 @@ SCHEMA_EXERCICIO = {
         "periodo": {
             "type": "string", 
             "enum": ["unico", "manha", "tarde"],
-            "description": "CRÍTICO PARA HÍBRIDOS: Use 'manha' ou 'tarde' para dividir dois treinos no mesmo dia. Use 'unico' se for apenas um."
+            "description": "CRÍTICO PARA HÍBRIDOS: Use 'manha' ou 'tarde'. Se for musculação à tarde, repita 'tarde' em TODOS os exercícios da sessão."
         },
         "series": {
             "type": "string", 
@@ -128,7 +128,7 @@ TOOLS_AURA = [
 # ======================================================
 
 def processar_comando(mensagem: str) -> str:
-    # 1. Carrega dados (Contexto)
+    # 1. Carrega dados
     memoria = carregar_memoria()
     jogador = memoria.get("jogador", {})
     historico_bruto = memoria.get("historico", [])
@@ -137,20 +137,24 @@ def processar_comando(mensagem: str) -> str:
     nivel = jogador.get("nivel", 1)
     coins = jogador.get("saldo_coins", 0)
 
-    # 2. Prompt de Sistema (AURA COACH - MODO EFICIÊNCIA)
+    # 2. Prompt de Sistema (AURA COACH - MODO HÍBRIDO PRO)
     prompt_sistema = {
         "role": "system", 
         "content": (
             f"Você é o Mestre da AURA, treinador de elite.\n"
             f"Atleta: {jogador.get('nome', 'Atleta')} | Nível {nivel}\n\n"
-            f"REGRA DE OURO (ECONOMIA DE TOKENS):\n"
-            f"Se o usuário pedir um treino ou dieta, VOCÊ DEVE USAR A FERRAMENTA IMEDIATAMENTE.\n"
-            f"NÃO escreva o treino no chat. O aplicativo mostrará a tabela visualmente.\n"
-            f"Sua prioridade é montar a estrutura JSON perfeita na ferramenta.\n\n"
-            f"DIRETRIZES TÉCNICAS:\n"
-            f"1. HÍBRIDOS: Se pedir dois treinos no dia, crie DOIS itens na lista: um com 'periodo': 'manha' e outro 'tarde'.\n"
-            f"2. CARDIO: Use o campo 'detalhes' para explicar a série (Aquecimento, Tiros, etc).\n"
-            f"3. FORÇA: Use séries e reps.\n"
+            f"REGRA DE OURO:\n"
+            f"Use a ferramenta IMEDIATAMENTE. NÃO escreva o treino no chat. Priorize a estrutura JSON.\n\n"
+            f"DIRETRIZES PARA TREINO HÍBRIDO (CRÍTICO):\n"
+            f"1. DIVISÃO: Se o pedido for dois turnos, use 'periodo': 'manha' e 'periodo': 'tarde'.\n"
+            f"2. VOLUME DE FORÇA: O turno de musculação NUNCA deve ter apenas 1 exercício. Gere uma lista completa (6 a 8 exercícios) e marque TODOS eles como 'periodo': 'tarde' (ou manhã).\n"
+            f"3. EXEMPLO HÍBRIDO CORRETO:\n"
+            f"   - Item 1: Corrida (Cardio/Manhã) - Detalhado.\n"
+            f"   - Item 2: Supino (Força/Tarde)\n"
+            f"   - Item 3: Desenvolvimento (Força/Tarde)\n"
+            f"   - Item 4: Elevação Lateral (Força/Tarde)\n"
+            f"   - ... (continue até completar o treino de força).\n"
+            f"4. CARDIO: Use o campo 'detalhes' para explicar o protocolo.\n"
         )
     }
 
@@ -162,7 +166,6 @@ def processar_comando(mensagem: str) -> str:
     texto_resposta = "..."
     msg_lower = mensagem.lower()
 
-    # Atalhos Rápidos (Economia de API)
     if "missões" in msg_lower or "missoes" in msg_lower:
         missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
         pendentes = [m['descricao'] for m in missoes if not m['concluida']]
@@ -174,7 +177,6 @@ def processar_comando(mensagem: str) -> str:
     elif "xp" in msg_lower:
         texto_resposta = f"📊 Nível {nivel} | {xp} XP."
 
-    # IA (OpenAI)
     else:
         try:
             if client:
@@ -183,13 +185,12 @@ def processar_comando(mensagem: str) -> str:
                     messages=mensagens_para_enviar,
                     tools=TOOLS_AURA,
                     tool_choice="auto",
-                    max_tokens=3000, # Aumentado para garantir JSON Híbrido completo
+                    max_tokens=3500, # Aumentado para garantir volume no híbrido
                     temperature=0.7
                 )
                 
                 msg_ia = response.choices[0].message
 
-                # SE A IA CHAMAR UMA FUNÇÃO (FERRAMENTA)
                 if msg_ia.tool_calls:
                     sucesso_total = False
                     
@@ -212,14 +213,10 @@ def processar_comando(mensagem: str) -> str:
                             logger.error(f"Erro ao executar tool {func_name}: {e}")
                             texto_resposta = "⚠️ Ocorreu um erro ao salvar o plano. Tente ser mais específico no pedido."
 
-                    # TRUQUE DE MESTRE:
-                    # Se salvou com sucesso, NÃO chamamos a OpenAI de novo para gerar texto.
-                    # Retornamos direto a mensagem fixa. Isso economiza tokens e evita alucinação.
                     if not sucesso_total:
                         texto_resposta = "⚠️ Tive um problema ao acessar seu banco de dados. Tente novamente."
                 
                 else:
-                    # Se for só bate-papo normal
                     texto_resposta = msg_ia.content.strip()
 
             else:
