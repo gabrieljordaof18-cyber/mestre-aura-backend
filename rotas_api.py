@@ -11,6 +11,7 @@ from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
+from data_loja import obter_catalogo_loja # <--- NOVA IMPORTAÇÃO DO MARKETPLACE
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_API")
@@ -130,7 +131,7 @@ def comando():
         return jsonify({"resposta": "⚠️ Erro de comunicação com o Mestre."})
 
 # ===================================================
-# 🎯 GAMIFICAÇÃO & MISSÕES (CORRIGIDO)
+# 🎯 GAMIFICAÇÃO & MISSÕES
 # ===================================================
 
 @api_bp.route('/missoes', methods=['GET'])
@@ -158,12 +159,11 @@ def listar_missoes():
         
         return jsonify({"missoes": novas_missoes})
     
-    # Se for o mesmo dia, retorna as que já existem (para manter o status de concluída)
+    # Se for o mesmo dia, retorna as que já existem
     return jsonify({"missoes": gamificacao.get("missoes_ativas", [])})
 
 @api_bp.route('/missoes/gerar', methods=['POST'])
 def rota_gerar_missoes():
-    # Rota manual de forçar geração (Admin ou Teste)
     novas = gerar_missoes_diarias()
     return jsonify({"mensagem": "Novas missões geradas!", "missoes": novas})
 
@@ -244,3 +244,17 @@ def get_plano_usuario():
     except Exception as e:
         logger.error(f"Erro ao buscar plano: {e}")
         return jsonify({"erro": "Falha ao carregar plano."}), 500
+
+# ===================================================
+# 🛍️ MARKETPLACE (LOJA FÍSICA) - NOVO
+# ===================================================
+
+@api_bp.route('/loja/produtos', methods=['GET'])
+def listar_produtos_loja():
+    """Retorna o catálogo de produtos físicos do data_loja.py."""
+    try:
+        produtos = obter_catalogo_loja()
+        return jsonify({"produtos": produtos})
+    except Exception as e:
+        logger.error(f"Erro ao listar produtos: {e}")
+        return jsonify({"produtos": []}), 500
