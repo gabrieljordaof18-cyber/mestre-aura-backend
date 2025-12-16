@@ -42,36 +42,36 @@ SCHEMA_EXERCICIO = {
     "properties": {
         "exercicio": {
             "type": "string", 
-            "description": "Nome do exercício ou Bloco do treino. Ex: 'Supino Reto' ou 'Natação - Série Principal'."
+            "description": "Nome do exercício ou Bloco. Ex: 'Supino' ou 'Natação - Série A'."
         },
         "tipo": {
             "type": "string", 
-            "enum": ["forca", "cardio", "hibrido"],
-            "description": "Define se é força (musculação/calistenia) ou cardio (corrida/bike/natação)."
-        },
-        "series": {
-            "type": "string", 
-            "description": "Ex: '4x'. Se for cardio, use para blocos (Ex: '10x'). Deixe vazio se for contínuo."
-        },
-        "reps": {
-            "type": "string", 
-            "description": "Ex: '10-12'. Se for cardio, use para distâncias parciais (Ex: '50m')."
-        },
-        "duracao": {
-            "type": "string", 
-            "description": "Tempo total ou distância total. Ex: '45min', '5km', 'Ate a falha'."
-        },
-        "detalhes": {
-            "type": "string", 
-            "description": "CAMPO CRÍTICO PARA CARDIO. Descreva a estrutura técnica. Ex: 'Aquecimento: 200m leve + Educativo. Principal: 10x50m forte c/ 30s descanso.'"
+            "enum": ["forca", "cardio"],
+            "description": "Selecione 'forca' para musculação/calistenia ou 'cardio' para corrida/bike/natação."
         },
         "periodo": {
             "type": "string", 
-            "enum": ["unico", "manha", "tarde", "noite"],
-            "description": "Use para treinos híbridos (dois turnos)."
+            "enum": ["unico", "manha", "tarde"],
+            "description": "CRÍTICO PARA HÍBRIDOS: Use 'manha' ou 'tarde' para dividir dois treinos no mesmo dia. Use 'unico' se for apenas um."
+        },
+        "series": {
+            "type": "string", 
+            "description": "Ex: '4x' (Use apenas para força)."
+        },
+        "reps": {
+            "type": "string", 
+            "description": "Ex: '10-12' (Use apenas para força)."
+        },
+        "duracao": {
+            "type": "string", 
+            "description": "Tempo/Distância. Ex: '45min', '5km', 'Até a falha'."
+        },
+        "detalhes": {
+            "type": "string", 
+            "description": "OBRIGATÓRIO PARA CARDIO: Descreva aquecimento, série principal e desaquecimento aqui. Seja técnico."
         }
     },
-    "required": ["exercicio", "tipo"]
+    "required": ["exercicio", "tipo", "periodo"]
 }
 
 TOOLS_AURA = [
@@ -79,11 +79,11 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva o plano alimentar detalhado com macros calculados.",
+            "description": "Salva o plano alimentar.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "resumo_objetivo": {"type": "string", "description": "Ex: Cutting Agressivo, 1800kcal"},
+                    "resumo_objetivo": {"type": "string"},
                     "kcal_total": {"type": "string"},
                     "cafe_da_manha": {"type": "string"},
                     "kcal_cafe_da_manha": {"type": "string"},
@@ -104,12 +104,12 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "Salva a rotina de treinos estruturada (Híbrida, Musculação ou Cardio).",
+            "description": "Salva a rotina de treinos.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "foco_atual": {"type": "string", "description": "Ex: Triathlon Short, Hipertrofia + Corrida, Fullbody"},
-                    "dicas_tecnicas": {"type": "string", "description": "Dica técnica global sobre intensidade e recuperação."},
+                    "foco_atual": {"type": "string", "description": "Ex: Híbrido (Maratona + Força)"},
+                    "dicas_tecnicas": {"type": "string"},
                     "segunda": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "terca": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "quarta": {"type": "array", "items": SCHEMA_EXERCICIO},
@@ -137,18 +137,20 @@ def processar_comando(mensagem: str) -> str:
     nivel = jogador.get("nivel", 1)
     coins = jogador.get("saldo_coins", 0)
 
-    # 2. Prompt de Sistema (AURA COACH PRO)
+    # 2. Prompt de Sistema (AURA COACH - MODO EFICIÊNCIA)
     prompt_sistema = {
         "role": "system", 
         "content": (
-            f"Você é o Mestre da AURA, treinador de elite especialista em periodização híbrida.\n"
+            f"Você é o Mestre da AURA, treinador de elite.\n"
             f"Atleta: {jogador.get('nome', 'Atleta')} | Nível {nivel}\n\n"
-            f"DIRETRIZES DE TREINO (IMPORTANTE):\n"
-            f"1. CLASSIFICAÇÃO: Para cada exercício, defina 'tipo': 'forca' (musculação) ou 'cardio' (corrida/natação/bike).\n"
-            f"2. CARDIO COMPLEXO: Não use apenas 'Corrida 30min'. Quebre o treino. Use o campo 'detalhes' para explicar o protocolo (Ex: '10 min aquecimento Z1 + 5x 1km forte Z4 + Desaquecimento').\n"
-            f"3. TREINO HÍBRIDO (DOIS TURNOS): Se o usuário pedir 'manhã corrida e tarde musculação', crie DOIS itens na lista do dia. Marque 'periodo': 'manha' no primeiro e 'periodo': 'tarde' no segundo.\n"
-            f"4. MUSCULAÇÃO: Mantenha o padrão Séries x Reps. Se for 'Fullbody', gere 8-10 exercícios variados.\n"
-            f"5. VOLUME: Se o usuário não especificar, use 5-7 exercícios para força e 1 bloco detalhado para cardio.\n"
+            f"REGRA DE OURO (ECONOMIA DE TOKENS):\n"
+            f"Se o usuário pedir um treino ou dieta, VOCÊ DEVE USAR A FERRAMENTA IMEDIATAMENTE.\n"
+            f"NÃO escreva o treino no chat. O aplicativo mostrará a tabela visualmente.\n"
+            f"Sua prioridade é montar a estrutura JSON perfeita na ferramenta.\n\n"
+            f"DIRETRIZES TÉCNICAS:\n"
+            f"1. HÍBRIDOS: Se pedir dois treinos no dia, crie DOIS itens na lista: um com 'periodo': 'manha' e outro 'tarde'.\n"
+            f"2. CARDIO: Use o campo 'detalhes' para explicar a série (Aquecimento, Tiros, etc).\n"
+            f"3. FORÇA: Use séries e reps.\n"
         )
     }
 
@@ -160,7 +162,7 @@ def processar_comando(mensagem: str) -> str:
     texto_resposta = "..."
     msg_lower = mensagem.lower()
 
-    # Atalhos Rápidos
+    # Atalhos Rápidos (Economia de API)
     if "missões" in msg_lower or "missoes" in msg_lower:
         missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
         pendentes = [m['descricao'] for m in missoes if not m['concluida']]
@@ -181,47 +183,43 @@ def processar_comando(mensagem: str) -> str:
                     messages=mensagens_para_enviar,
                     tools=TOOLS_AURA,
                     tool_choice="auto",
-                    max_tokens=2500, # Aumentado para suportar detalhes técnicos
+                    max_tokens=3000, # Aumentado para garantir JSON Híbrido completo
                     temperature=0.7
                 )
                 
                 msg_ia = response.choices[0].message
 
+                # SE A IA CHAMAR UMA FUNÇÃO (FERRAMENTA)
                 if msg_ia.tool_calls:
-                    mensagens_para_enviar.append(msg_ia) 
+                    sucesso_total = False
                     
                     for tool_call in msg_ia.tool_calls:
                         func_name = tool_call.function.name
-                        args = json.loads(tool_call.function.arguments)
+                        try:
+                            args = json.loads(tool_call.function.arguments)
+                            
+                            if func_name == "salvar_nova_dieta":
+                                if atualizar_plano_mestre("dieta", args):
+                                    sucesso_total = True
+                                    texto_resposta = "🥗 Dieta montada e salva com sucesso!\n\n👉 Acesse o botão **'Minha Dieta'** no menu para ver seu plano alimentar completo."
+                                    
+                            elif func_name == "salvar_novo_treino":
+                                if atualizar_plano_mestre("treino", args):
+                                    sucesso_total = True
+                                    texto_resposta = "💪 Treino Estruturado Criado!\n\n👉 Acesse o botão **'Meu Treino'** na tela inicial para visualizar sua nova rotina detalhada."
                         
-                        resultado_tool = "Erro ao processar."
-                        
-                        if func_name == "salvar_nova_dieta":
-                            if atualizar_plano_mestre("dieta", args):
-                                resultado_tool = "✅ Dieta salva! Peça para o usuário clicar em 'Minha Dieta'."
-                            else:
-                                resultado_tool = "Erro de banco de dados."
-                                
-                        elif func_name == "salvar_novo_treino":
-                            if atualizar_plano_mestre("treino", args):
-                                resultado_tool = "✅ Treino Híbrido Salvo! Peça para o usuário clicar em 'Meu Treino' para ver os detalhes técnicos."
-                            else:
-                                resultado_tool = "Erro de banco de dados."
+                        except Exception as e:
+                            logger.error(f"Erro ao executar tool {func_name}: {e}")
+                            texto_resposta = "⚠️ Ocorreu um erro ao salvar o plano. Tente ser mais específico no pedido."
 
-                        mensagens_para_enviar.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": func_name,
-                            "content": resultado_tool
-                        })
-
-                    final_response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=mensagens_para_enviar
-                    )
-                    texto_resposta = final_response.choices[0].message.content.strip()
+                    # TRUQUE DE MESTRE:
+                    # Se salvou com sucesso, NÃO chamamos a OpenAI de novo para gerar texto.
+                    # Retornamos direto a mensagem fixa. Isso economiza tokens e evita alucinação.
+                    if not sucesso_total:
+                        texto_resposta = "⚠️ Tive um problema ao acessar seu banco de dados. Tente novamente."
                 
                 else:
+                    # Se for só bate-papo normal
                     texto_resposta = msg_ia.content.strip()
 
             else:
