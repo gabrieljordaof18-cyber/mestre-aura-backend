@@ -6,7 +6,7 @@ from flask import request, jsonify, Blueprint
 # Importações Internas
 from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
 from data_global import carregar_memoria_global
-from data_manager import ler_dados_jogador, obter_ranking_global, ler_plano_mestre # <--- ATUALIZADO AQUI
+from data_manager import ler_dados_jogador, obter_ranking_global, ler_plano_mestre 
 from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
@@ -28,7 +28,6 @@ def get_status_jogador():
     try:
         dados = ler_dados_jogador()
         
-        # Fallback seguro
         if not dados:
             return jsonify({
                 "nome": "Iniciado", "xp_total": 0, "aura_coins": 0,
@@ -38,7 +37,6 @@ def get_status_jogador():
 
         xp_atual = dados.get("xp_total", 0)
         
-        # Matemática de Nível (1000 XP por nível)
         XP_POR_NIVEL = 1000
         nivel_atual = int(xp_atual / XP_POR_NIVEL) + 1
         xp_restante = XP_POR_NIVEL - (xp_atual % XP_POR_NIVEL)
@@ -78,10 +76,9 @@ def get_ranking_cla():
 
 @api_bp.route('/antifraude/validar', methods=['POST'])
 def validar_atividade():
-    """Valida se existe treino real na data informada."""
     try:
         dados_input = request.get_json(force=True)
-        data_declarada = dados_input.get('data') # "YYYY-MM-DD"
+        data_declarada = dados_input.get('data') 
         
         usuario = ler_dados_jogador()
         if not usuario:
@@ -91,7 +88,6 @@ def validar_atividade():
         encontrou = False
         
         for atividade in historico:
-            # Normaliza data do banco (pode ser datetime ou str)
             data_real = atividade.get('data')
             if isinstance(data_real, datetime):
                 data_real = data_real.strftime('%Y-%m-%d')
@@ -134,17 +130,40 @@ def comando():
         return jsonify({"resposta": "⚠️ Erro de comunicação com o Mestre."})
 
 # ===================================================
-# 🎯 GAMIFICAÇÃO & MISSÕES
+# 🎯 GAMIFICAÇÃO & MISSÕES (CORRIGIDO)
 # ===================================================
 
 @api_bp.route('/missoes', methods=['GET'])
 def listar_missoes():
+    """
+    Retorna as missões do dia.
+    Se detectar que mudou o dia, gera novas automaticamente.
+    """
     memoria = carregar_memoria()
-    missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
-    return jsonify({"missoes": missoes})
+    gamificacao = memoria.get("gamificacao", {})
+    
+    # Data de hoje (YYYY-MM-DD)
+    hoje_str = datetime.now().strftime("%Y-%m-%d")
+    ultima_atualizacao = gamificacao.get("data_ultima_atualizacao", "")
+
+    # Se a data salva for diferente de hoje, gera novas missões
+    if ultima_atualizacao != hoje_str:
+        print(f"🔄 Novo dia detectado ({hoje_str}). Gerando novas missões...")
+        novas_missoes = gerar_missoes_diarias()
+        
+        # Atualiza a memória com as novas missões e a nova data
+        memoria["gamificacao"]["missoes_ativas"] = novas_missoes
+        memoria["gamificacao"]["data_ultima_atualizacao"] = hoje_str
+        salvar_memoria(memoria)
+        
+        return jsonify({"missoes": novas_missoes})
+    
+    # Se for o mesmo dia, retorna as que já existem (para manter o status de concluída)
+    return jsonify({"missoes": gamificacao.get("missoes_ativas", [])})
 
 @api_bp.route('/missoes/gerar', methods=['POST'])
 def rota_gerar_missoes():
+    # Rota manual de forçar geração (Admin ou Teste)
     novas = gerar_missoes_diarias()
     return jsonify({"mensagem": "Novas missões geradas!", "missoes": novas})
 
@@ -187,7 +206,6 @@ def concluir_missao():
 @api_bp.route('/equilibrio', methods=['GET'])
 def obter_equilibrio():
     memoria = carregar_memoria()
-    # Retorna homeostase ou padrão seguro
     return jsonify(memoria.get("homeostase", {"score": 0, "estado": "Carregando..."}))
 
 @api_bp.route('/status_fisiologico', methods=['GET'])
@@ -203,37 +221,26 @@ def feedback():
 
 @api_bp.route('/sincronizar_dinamico', methods=['POST'])
 def sincronizar_dinamico():
-    # Recalcula e atualiza tudo
     from data_sensores import obter_dados_fisiologicos
-    
     novos_dados = obter_dados_fisiologicos()
     calcular_e_atualizar_equilibrio()
-    
     return jsonify({"dados": novos_dados})
 
 # ===================================================
-# 📂 GESTÃO DE PLANOS (DIETA & TREINO - NOVO)
+# 📂 GESTÃO DE PLANOS (DIETA & TREINO)
 # ===================================================
 
 @api_bp.route('/usuario/planos', methods=['GET'])
 def get_plano_usuario():
-    """
-    Rota chamada quando o usuário clica no botão DIETA ou TREINO.
-    Exemplo de uso: /api/usuario/planos?tipo=dieta
-    """
     try:
-        tipo = request.args.get('tipo') # 'dieta' ou 'treino'
-        
+        tipo = request.args.get('tipo') 
         if tipo not in ['dieta', 'treino']:
             return jsonify({"erro": "Tipo inválido. Use 'dieta' ou 'treino'."}), 400
-            
         dados_plano = ler_plano_mestre(tipo)
-        
         return jsonify({
             "tipo": tipo,
             "dados": dados_plano
         })
-        
     except Exception as e:
         logger.error(f"Erro ao buscar plano: {e}")
         return jsonify({"erro": "Falha ao carregar plano."}), 500
