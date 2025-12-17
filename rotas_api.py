@@ -11,7 +11,7 @@ from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
-from data_loja import obter_catalogo_loja # <--- NOVA IMPORTAÇÃO DO MARKETPLACE
+# OBS: Importação data_loja REMOVIDA pois agora usamos o banco nativo Base44
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_API")
@@ -244,17 +244,3 @@ def get_plano_usuario():
     except Exception as e:
         logger.error(f"Erro ao buscar plano: {e}")
         return jsonify({"erro": "Falha ao carregar plano."}), 500
-
-# ===================================================
-# 🛍️ MARKETPLACE (LOJA FÍSICA) - NOVO
-# ===================================================
-
-@api_bp.route('/loja/produtos', methods=['GET'])
-def listar_produtos_loja():
-    """Retorna o catálogo de produtos físicos do data_loja.py."""
-    try:
-        produtos = obter_catalogo_loja()
-        return jsonify({"produtos": produtos})
-    except Exception as e:
-        logger.error(f"Erro ao listar produtos: {e}")
-        return jsonify({"produtos": []}), 500
