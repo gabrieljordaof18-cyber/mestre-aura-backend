@@ -11,7 +11,7 @@ from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
-# OBS: Importação data_loja REMOVIDA pois agora usamos o banco nativo Base44
+from logic_pedidos import processar_venda_confirmada # <--- NOVA IMPORTAÇÃO LOGÍSTICA
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_API")
@@ -244,3 +244,80 @@ def get_plano_usuario():
     except Exception as e:
         logger.error(f"Erro ao buscar plano: {e}")
         return jsonify({"erro": "Falha ao carregar plano."}), 500
+
+# ===================================================
+# 💳 PAGAMENTOS & LOGÍSTICA (ASAAS)
+# ===================================================
+
+@api_bp.route('/pagamento/criar', methods=['POST'])
+def criar_pagamento_asaas():
+    """
+    Simula a criação de um pagamento no Asaas.
+    Retorna um QR Code de teste para o frontend.
+    """
+    try:
+        dados = request.get_json(force=True)
+        valor = dados.get('valor')
+        metodo = dados.get('metodo') # 'pix' ou 'card'
+        ref_pedido = dados.get('external_reference')
+        
+        # Simulação de resposta do Asaas (Sandbox)
+        # Em produção, aqui chamaríamos requests.post('https://api.asaas.com/v3/payments'...)
+        
+        logger.info(f"💰 Criando pagamento simulado para Pedido #{ref_pedido} no valor de R${valor}")
+
+        if metodo == 'pix':
+            return jsonify({
+                "tipo": "pix",
+                "sucesso": True,
+                "payload_pix": "00020126330014BR.GOV.BCB.PIX011141993285806520400005303986540550.005802BR5925Aura Performance Ltda6009Sao Paulo62070503***6304E2CA",
+                # Imagem genérica de QR Code para teste visual
+                "imagem_qr": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY2BgYAAAAAQAAVzN/2kAAAAASUVORK5CYII=" 
+            })
+        else:
+            # Simulação Cartão
+            return jsonify({
+                "tipo": "cartao",
+                "sucesso": True,
+                "link_pagamento": "https://www.asaas.com/c/123teste"
+            })
+
+    except Exception as e:
+        logger.error(f"Erro ao criar pagamento: {e}")
+        return jsonify({"erro": "Falha na comunicação com gateway."}), 500
+
+@api_bp.route('/webhook/asaas', methods=['POST'])
+def webhook_asaas():
+    """
+    Recebe notificação do Asaas (ou simulação) de que o Pix foi pago.
+    Dispara a logística de separação de pedidos.
+    """
+    try:
+        dados = request.get_json(force=True)
+        
+        # O Asaas envia o evento "PAYMENT_RECEIVED" ou "PAYMENT_CONFIRMED"
+        evento = dados.get('event')
+        pagamento = dados.get('payment', {})
+        
+        # Pega o ID do nosso pedido que estava salvo no campo 'externalReference' do Asaas
+        pedido_id_aura = pagamento.get('externalReference')
+        
+        if evento in ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']:
+            if pedido_id_aura:
+                print(f"🔔 WEBHOOK RECEBIDO: Pagamento confirmado para Pedido {pedido_id_aura}")
+                
+                # CHAMA O CÉREBRO DA LOGÍSTICA
+                sucesso = processar_venda_confirmada(pedido_id_aura)
+                
+                if sucesso:
+                    return jsonify({"status": "SUCCESS", "msg": "Logística iniciada."})
+                else:
+                    return jsonify({"status": "ERROR", "msg": "Erro interno na logística."}), 500
+            else:
+                logger.warning("Webhook recebido sem externalReference.")
+                
+        return jsonify({"status": "RECEIVED"}) # Sempre retorna 200 pro Asaas não reenviar
+
+    except Exception as e:
+        logger.error(f"Erro no webhook: {e}")
+        return jsonify({"erro": "Falha interna"}), 500
