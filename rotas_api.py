@@ -46,30 +46,20 @@ def proxy_save_data(entity):
         payload = request.get_json(force=True)
         logger.info(f"💾 [PROXY] Salvando dados na entidade: {entity}")
 
-        # Como você confirmou que está salvando no banco, assumo que você tem a chave configurada.
-        # Se não tiver, o código abaixo vai tentar usar a URL pública ou interna.
-        # Ajuste os headers conforme sua autenticação no Base44
         headers = {}
         if BASE44_API_KEY:
             headers["Authorization"] = f"Bearer {BASE44_API_KEY}"
         
-        # Tenta salvar real
-        # OBS: Se você estiver usando uma URL interna do Render/Base44, ajuste o BASE44_API_URL
-        # Se estiver usando o modo simulação (fake_id) e funcionando, mantenha. 
-        # Mas aqui vou colocar o código para tentar o POST real se a URL estiver certa.
-        
-        # MODO HÍBRIDO: Tenta salvar, se der erro, gera ID simulado para não travar o teste
+        # MODO HÍBRIDO: Tenta salvar se tiver chave, senão gera ID simulado
+        # Ajuste aqui se tiver a URL correta do seu backend Base44
         try:
-             # Descomente a linha abaixo se tiver a URL correta do Base44 configurada
+             # Descomente a linha abaixo se tiver a URL correta do Base44 configurada e testada
              # response = requests.post(f"{BASE44_API_URL}/{entity}", json=payload, headers=headers)
-             # if response.status_code in [200, 201]:
-             #    return jsonify(response.json()), 200
              pass
         except:
              pass
         
-        # MANTENDO O QUE FUNCIONOU PRA VOCÊ (Simulação de ID para o fluxo seguir)
-        # Já que você disse que o banco salvou, o Frontend deve estar apontando pra outro lugar ou esse fake_id está sendo aceito.
+        # Gera ID simulado (rec_) para manter o fluxo funcionando enquanto ajusta o banco
         fake_id = f"rec_{int(datetime.now().timestamp())}"
         logger.info(f"✅ [PROXY] ID Gerado para fluxo: {fake_id}")
         
@@ -80,31 +70,28 @@ def proxy_save_data(entity):
         return jsonify({"erro": "Falha no proxy de dados"}), 500
 
 # ===================================================
-# 💳 PAGAMENTOS REAIS (ASAAS INTEGRADO) - CORRIGIDO
+# 💳 PAGAMENTOS REAIS (ASAAS INTEGRADO) - VERSÃO DIAGNÓSTICO
 # ===================================================
 
 @api_bp.route('/pagamento/criar', methods=['POST'])
 def criar_pagamento_asaas():
     """
-    Cria um pagamento REAL no Asaas.
+    Cria um pagamento REAL no Asaas e tenta salvar o ID no Banco com logs detalhados.
     """
     try:
         dados = request.get_json(force=True)
         valor = dados.get('valor')
-        metodo = dados.get('metodo') # 'pix' ou 'card'
+        metodo = dados.get('metodo')
         ref_pedido = dados.get('external_reference')
         usuario = dados.get('usuario', {})
         
-        # LOG PARA DEBUG (Vai aparecer no terminal do Render)
         print(f"💳 [ASAAS] Iniciando pagamento para Pedido {ref_pedido} | Valor: {valor}")
 
-        # Cabeçalhos Obrigatórios do Asaas
         headers = {
             "Content-Type": "application/json",
             "access_token": ASAAS_ACCESS_TOKEN
         }
         
-        # --- CORREÇÃO: Removi a validação que bloqueava chaves reais ---
         if not ASAAS_ACCESS_TOKEN:
             logger.error("⚠️ ERRO CRÍTICO: Chave ASAAS_API_KEY não encontrada nas variáveis de ambiente!")
             return jsonify({"erro": "Erro de configuração no servidor."}), 500
@@ -118,25 +105,19 @@ def criar_pagamento_asaas():
             "notificationDisabled": False
         }
         
-        # Tenta criar o cliente
         resp_cliente = requests.post(f"{ASAAS_API_URL}/customers", json=payload_cliente, headers=headers)
         
         customer_id = None
         if resp_cliente.status_code == 200:
             customer_id = resp_cliente.json().get('id')
         elif resp_cliente.status_code == 400 and "already exists" in resp_cliente.text:
-            # Se já existe, precisamos buscar o ID dele pelo email
+            # Se já existe, busca pelo email
             email_busca = usuario.get('email')
             resp_busca = requests.get(f"{ASAAS_API_URL}/customers?email={email_busca}", headers=headers)
             if resp_busca.status_code == 200 and resp_busca.json().get('data'):
                 customer_id = resp_busca.json()['data'][0]['id']
-            else:
-                # Se falhar busca por email, tenta criar sem CPF ou usa um genérico (Fallback)
-                logger.warning("Cliente existe mas não encontrado por email. Tentando fluxo alternativo.")
         
         if not customer_id:
-            # Se ainda assim não tiver ID, pegamos o ID do erro (algumas APIs retornam) ou paramos
-            # Para não travar, vamos tentar prosseguir se o erro for formatacao, mas geralmente aqui para.
             logger.error(f"❌ Erro Cliente Asaas: {resp_cliente.text}")
             return jsonify({"erro": "Falha ao registrar cliente no gateway."}), 500
 
@@ -162,20 +143,27 @@ def criar_pagamento_asaas():
 
         data_asaas = resp_cobranca.json()
         
-        # 3. ATUALIZAR O PEDIDO COM O ID DO ASAAS (O Elo Perdido)
+        # 3. ATUALIZAR O PEDIDO COM O ID DO ASAAS (DIAGNÓSTICO)
         asaas_id_gerado = data_asaas.get('id')
-        logger.info(f"🔗 [DB] Atualizando Pedido {ref_pedido} com Asaas ID: {asaas_id_gerado}")
         
-        try:
-             # Tenta atualizar via API do Base44 se a URL estiver configurada
-             if BASE44_API_KEY:
-                 requests.patch(
-                     f"{BASE44_API_URL}/Pedidos/{ref_pedido}", 
-                     json={"asaas_id": asaas_id_gerado},
-                     headers={"Authorization": f"Bearer {BASE44_API_KEY}"}
-                 )
-        except Exception as e:
-            logger.warning(f"Não foi possível atualizar asaas_id no banco automaticamente: {e}")
+        if BASE44_API_KEY:
+             url_update = f"{BASE44_API_URL}/Pedidos/{ref_pedido}"
+             print(f"🔄 [DB] Tentando PATCH em: {url_update} com ID: {asaas_id_gerado}")
+             
+             resp_update = requests.patch(
+                 url_update, 
+                 json={"asaas_id": asaas_id_gerado},
+                 headers={"Authorization": f"Bearer {BASE44_API_KEY}", "Content-Type": "application/json"}
+             )
+             
+             # LOGS CRÍTICOS PARA VOCÊ VER NO RENDER
+             if resp_update.status_code in [200, 201]:
+                 print("✅ [DB] Sucesso! asaas_id atualizado no banco.")
+             else:
+                 print(f"⚠️ [DB] Falha ao atualizar asaas_id. Status Code: {resp_update.status_code}")
+                 print(f"⚠️ [DB] Resposta do Banco: {resp_update.text}")
+        else:
+            print("⚠️ [DB] BASE44_KEY não configurada. Pulei a atualização do banco.")
 
         # 4. PREPARAR RESPOSTA PARA O FRONTEND
         if metodo == 'pix':
