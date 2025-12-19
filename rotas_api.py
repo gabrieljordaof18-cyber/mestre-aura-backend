@@ -1,11 +1,11 @@
 import logging
 import os
-import requests # <--- NECESSÁRIO PARA O PROXY E ASAAS
+import requests 
 from datetime import datetime
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 from flask import request, jsonify, Blueprint
 
-# Importações Internas
+# --- IMPORTAÇÕES MANTIDAS (Gamificação e Usuário) ---
 from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
 from data_global import carregar_memoria_global
 from data_manager import ler_dados_jogador, obter_ranking_global, ler_plano_mestre 
@@ -13,91 +13,70 @@ from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
-from logic_pedidos import processar_venda_confirmada 
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_API")
 
-# Definição do Blueprint
 api_bp = Blueprint('api_bp', __name__, url_prefix='/api')
 
 # ===================================================
-# 🔑 CONFIGURAÇÕES DE PRODUÇÃO (CHAVES)
+# 🔑 CONFIGURAÇÕES
 # ===================================================
-# IMPORTANTE: Em produção, use variáveis de ambiente (os.environ.get)
 
-ASAAS_API_URL = "https://api.asaas.com/v3" # URL de Produção
-ASAAS_ACCESS_TOKEN = os.environ.get("ASAAS_API_KEY") # Pega do Render
-
-# URL da API Nativa do Base44 para salvar os dados (Proxy)
-BASE44_API_URL = "https://api.base44.com/api/data" 
-BASE44_API_KEY = os.environ.get("BASE44_KEY", "") 
+ASAAS_API_URL = "https://api.asaas.com/v3"
+ASAAS_ACCESS_TOKEN = os.environ.get("ASAAS_API_KEY") 
 
 # ===================================================
-# 🌉 ROTA PROXY DE DADOS (DERRUBANDO O MURO 404)
+# 🌉 ROTA PROXY DE DADOS (FRONTEND -> BASE44)
 # ===================================================
 
 @api_bp.route('/data/<entity>', methods=['POST'])
 def proxy_save_data(entity):
     """
-    Recebe os dados do Frontend (Checkout) e salva na tabela correspondente do Base44.
+    Rota de pass-through. 
+    Idealmente o Frontend usa o SDK do Base44, mas mantemos isso 
+    para compatibilidade com o Checkout.js atual.
     """
     try:
-        payload = request.get_json(force=True)
-        logger.info(f"💾 [PROXY] Salvando dados na entidade: {entity}")
-
-        headers = {}
-        if BASE44_API_KEY:
-            headers["Authorization"] = f"Bearer {BASE44_API_KEY}"
-        
-        # MODO HÍBRIDO: Tenta salvar se tiver chave, senão gera ID simulado
-        # Ajuste aqui se tiver a URL correta do seu backend Base44
-        try:
-             # Descomente a linha abaixo se tiver a URL correta do Base44 configurada e testada
-             # response = requests.post(f"{BASE44_API_URL}/{entity}", json=payload, headers=headers)
-             pass
-        except:
-             pass
-        
-        # Gera ID simulado (rec_) para manter o fluxo funcionando enquanto ajusta o banco
+        # Gera um ID de referência para o fluxo não quebrar
         fake_id = f"rec_{int(datetime.now().timestamp())}"
-        logger.info(f"✅ [PROXY] ID Gerado para fluxo: {fake_id}")
+        logger.info(f"✅ [PROXY] ID de fluxo gerado: {fake_id}")
         
-        return jsonify({"id": fake_id, "_id": fake_id, "status": "success"}), 200
+        # Retorna sucesso simulado para o Checkout prosseguir para o pagamento
+        return jsonify({"id": fake_id, "_id": fake_id, "status": "proxy_ok"}), 200
 
     except Exception as e:
-        logger.error(f"❌ [PROXY] Erro ao salvar dados: {e}")
-        return jsonify({"erro": "Falha no proxy de dados"}), 500
+        logger.error(f"❌ [PROXY] Erro: {e}")
+        return jsonify({"erro": "Falha no proxy"}), 500
 
 # ===================================================
-# 💳 PAGAMENTOS REAIS (ASAAS INTEGRADO) - VERSÃO DIAGNÓSTICO
+# 💳 PAGAMENTOS (CRIAÇÃO APENAS)
 # ===================================================
 
 @api_bp.route('/pagamento/criar', methods=['POST'])
 def criar_pagamento_asaas():
     """
-    Cria um pagamento REAL no Asaas e tenta salvar o ID no Banco com logs detalhados.
+    Gera o PIX/Boleto no Asaas.
+    O vínculo e atualização de status agora são feitos via Webhook direto no Base44.
     """
     try:
         dados = request.get_json(force=True)
         valor = dados.get('valor')
-        metodo = dados.get('metodo')
-        ref_pedido = dados.get('external_reference')
+        metodo = dados.get('metodo') # 'pix' ou 'card'
+        ref_pedido = dados.get('external_reference') # ID do pedido
         usuario = dados.get('usuario', {})
         
-        print(f"💳 [ASAAS] Iniciando pagamento para Pedido {ref_pedido} | Valor: {valor}")
+        logger.info(f"💳 [ASAAS] Criando cobrança | Pedido: {ref_pedido} | R$ {valor}")
+
+        if not ASAAS_ACCESS_TOKEN:
+            return jsonify({"erro": "Erro: Chave ASAAS_API_KEY não configurada."}), 500
 
         headers = {
             "Content-Type": "application/json",
             "access_token": ASAAS_ACCESS_TOKEN
         }
-        
-        if not ASAAS_ACCESS_TOKEN:
-            logger.error("⚠️ ERRO CRÍTICO: Chave ASAAS_API_KEY não encontrada nas variáveis de ambiente!")
-            return jsonify({"erro": "Erro de configuração no servidor."}), 500
 
-        # 1. CRIAR CLIENTE NO ASAAS
-        logger.info("👤 [ASAAS] Buscando/Criando cliente...")
+        # 1. CRIAR/BUSCAR CLIENTE
         payload_cliente = {
             "name": usuario.get('nome', 'Cliente Aura'),
             "email": usuario.get('email', 'email@exemplo.com'),
@@ -110,65 +89,39 @@ def criar_pagamento_asaas():
         customer_id = None
         if resp_cliente.status_code == 200:
             customer_id = resp_cliente.json().get('id')
-        elif resp_cliente.status_code == 400 and "already exists" in resp_cliente.text:
-            # Se já existe, busca pelo email
-            email_busca = usuario.get('email')
-            resp_busca = requests.get(f"{ASAAS_API_URL}/customers?email={email_busca}", headers=headers)
+        elif "already exists" in resp_cliente.text:
+            # Busca cliente por email se já existir
+            email = usuario.get('email')
+            resp_busca = requests.get(f"{ASAAS_API_URL}/customers?email={email}", headers=headers)
             if resp_busca.status_code == 200 and resp_busca.json().get('data'):
                 customer_id = resp_busca.json()['data'][0]['id']
         
         if not customer_id:
             logger.error(f"❌ Erro Cliente Asaas: {resp_cliente.text}")
-            return jsonify({"erro": "Falha ao registrar cliente no gateway."}), 500
+            return jsonify({"erro": "Falha ao identificar cliente."}), 500
 
         # 2. CRIAR A COBRANÇA
-        logger.info(f"💰 [ASAAS] Gerando cobrança para Cliente {customer_id}")
-        
-        billing_type = "PIX" if metodo == 'pix' else "CREDIT_CARD"
-        
         payload_cobranca = {
             "customer": customer_id,
-            "billingType": billing_type,
+            "billingType": "PIX" if metodo == 'pix' else "CREDIT_CARD",
             "value": float(valor),
             "dueDate": datetime.now().strftime("%Y-%m-%d"),
             "description": dados.get('descricao', 'Pedido Aura'),
-            "externalReference": ref_pedido, 
+            "externalReference": ref_pedido, # O Webhook do Base44 usará isso para achar o pedido
         }
 
         resp_cobranca = requests.post(f"{ASAAS_API_URL}/payments", json=payload_cobranca, headers=headers)
         
         if resp_cobranca.status_code != 200:
              logger.error(f"❌ Erro Cobrança Asaas: {resp_cobranca.text}")
-             return jsonify({"erro": "Gateway recusou a transação. Verifique os dados."}), 500
+             return jsonify({"erro": "Gateway recusou a transação."}), 500
 
         data_asaas = resp_cobranca.json()
-        
-        # 3. ATUALIZAR O PEDIDO COM O ID DO ASAAS (DIAGNÓSTICO)
-        asaas_id_gerado = data_asaas.get('id')
-        
-        if BASE44_API_KEY:
-             url_update = f"{BASE44_API_URL}/Pedidos/{ref_pedido}"
-             print(f"🔄 [DB] Tentando PATCH em: {url_update} com ID: {asaas_id_gerado}")
-             
-             resp_update = requests.patch(
-                 url_update, 
-                 json={"asaas_id": asaas_id_gerado},
-                 headers={"Authorization": f"Bearer {BASE44_API_KEY}", "Content-Type": "application/json"}
-             )
-             
-             # LOGS CRÍTICOS PARA VOCÊ VER NO RENDER
-             if resp_update.status_code in [200, 201]:
-                 print("✅ [DB] Sucesso! asaas_id atualizado no banco.")
-             else:
-                 print(f"⚠️ [DB] Falha ao atualizar asaas_id. Status Code: {resp_update.status_code}")
-                 print(f"⚠️ [DB] Resposta do Banco: {resp_update.text}")
-        else:
-            print("⚠️ [DB] BASE44_KEY não configurada. Pulei a atualização do banco.")
+        asaas_id = data_asaas.get('id')
 
-        # 4. PREPARAR RESPOSTA PARA O FRONTEND
+        # 3. RESPOSTA PARA O FRONTEND
         if metodo == 'pix':
-            id_pagamento = data_asaas.get('id')
-            resp_qr = requests.get(f"{ASAAS_API_URL}/payments/{id_pagamento}/pixQrCode", headers=headers)
+            resp_qr = requests.get(f"{ASAAS_API_URL}/payments/{asaas_id}/pixQrCode", headers=headers)
             if resp_qr.status_code == 200:
                 data_qr = resp_qr.json()
                 return jsonify({
@@ -184,44 +137,13 @@ def criar_pagamento_asaas():
                 "link_pagamento": data_asaas.get('invoiceUrl')
             })
 
-        return jsonify({"erro": "Fluxo de pagamento incompleto."}), 500
-
     except Exception as e:
-        logger.error(f"Erro crítico no pagamento: {e}")
-        return jsonify({"erro": "Falha na comunicação com gateway."}), 500
+        logger.error(f"Erro crítico: {e}")
+        return jsonify({"erro": "Falha interna."}), 500
+
 
 # ===================================================
-# 🔔 WEBHOOK (GATILHO LOGÍSTICO)
-# ===================================================
-
-@api_bp.route('/webhook/asaas', methods=['POST'])
-def webhook_asaas():
-    """
-    Recebe notificação REAL do Asaas.
-    """
-    try:
-        dados = request.get_json(force=True)
-        evento = dados.get('event')
-        pagamento = dados.get('payment', {})
-        pedido_id_aura = pagamento.get('externalReference')
-        
-        logger.info(f"🔔 [WEBHOOK] Evento recebido: {evento} | Ref: {pedido_id_aura}")
-        
-        if evento in ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']:
-            if pedido_id_aura:
-                # CHAMA O CÉREBRO DA LOGÍSTICA
-                sucesso = processar_venda_confirmada(pedido_id_aura)
-                if sucesso:
-                    return jsonify({"status": "SUCCESS", "msg": "Logística iniciada."})
-                
-        return jsonify({"status": "RECEIVED"}) 
-
-    except Exception as e:
-        logger.error(f"Erro no webhook: {e}")
-        return jsonify({"erro": "Falha interna"}), 500
-
-# ===================================================
-# 📊 (ROTAS ANTIGAS MANTIDAS)
+# ROTAS DO APP (MANTIDAS)
 # ===================================================
 
 @api_bp.route('/usuario/status', methods=['GET'])
@@ -289,7 +211,7 @@ def listar_missoes():
     hoje_str = datetime.now().strftime("%Y-%m-%d")
     ultima_atualizacao = gamificacao.get("data_ultima_atualizacao", "")
     if ultima_atualizacao != hoje_str:
-        print(f"🔄 Novo dia detectado ({hoje_str}). Gerando novas missões...")
+        # print(f"🔄 Novo dia detectado ({hoje_str}). Gerando novas missões...")
         novas_missoes = gerar_missoes_diarias()
         memoria["gamificacao"]["missoes_ativas"] = novas_missoes
         memoria["gamificacao"]["data_ultima_atualizacao"] = hoje_str
