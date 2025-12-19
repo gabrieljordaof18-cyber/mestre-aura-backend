@@ -34,8 +34,7 @@ ASAAS_ACCESS_TOKEN = os.environ.get("ASAAS_API_KEY")
 def proxy_save_data(entity):
     """
     Rota de pass-through. 
-    Idealmente o Frontend usa o SDK do Base44, mas mantemos isso 
-    para compatibilidade com o Checkout.js atual.
+    Mantemos para compatibilidade, caso o checkout use.
     """
     try:
         # Gera um ID de referência para o fluxo não quebrar
@@ -50,14 +49,13 @@ def proxy_save_data(entity):
         return jsonify({"erro": "Falha no proxy"}), 500
 
 # ===================================================
-# 💳 PAGAMENTOS (CRIAÇÃO APENAS)
+# 💳 PAGAMENTOS (CRIAÇÃO E RECUPERAÇÃO)
 # ===================================================
 
 @api_bp.route('/pagamento/criar', methods=['POST'])
 def criar_pagamento_asaas():
     """
     Gera o PIX/Boleto no Asaas.
-    O vínculo e atualização de status agora são feitos via Webhook direto no Base44.
     """
     try:
         dados = request.get_json(force=True)
@@ -107,7 +105,7 @@ def criar_pagamento_asaas():
             "value": float(valor),
             "dueDate": datetime.now().strftime("%Y-%m-%d"),
             "description": dados.get('descricao', 'Pedido Aura'),
-            "externalReference": ref_pedido, # O Webhook do Base44 usará isso para achar o pedido
+            "externalReference": ref_pedido, 
         }
 
         resp_cobranca = requests.post(f"{ASAAS_API_URL}/payments", json=payload_cobranca, headers=headers)
@@ -140,6 +138,43 @@ def criar_pagamento_asaas():
     except Exception as e:
         logger.error(f"Erro crítico: {e}")
         return jsonify({"erro": "Falha interna."}), 500
+
+# --- NOVA ROTA PARA A TELA MEUS PEDIDOS ---
+@api_bp.route('/pagamento/pix/qrcode/<id_pagamento>', methods=['GET'])
+def recuperar_qrcode_pix(id_pagamento):
+    """
+    Recupera o QR Code atualizado de um pagamento Pix existente.
+    O Frontend chama isso quando o usuário clica em 'Ver Pix' num pedido antigo.
+    """
+    try:
+        if not ASAAS_ACCESS_TOKEN:
+            return jsonify({"erro": "Configuração incompleta."}), 500
+
+        headers = {
+            "Content-Type": "application/json",
+            "access_token": ASAAS_ACCESS_TOKEN
+        }
+
+        logger.info(f"🔄 [ASAAS] Recuperando QR Code para: {id_pagamento}")
+
+        # Chama a API do Asaas para pegar o payload atualizado
+        url = f"{ASAAS_API_URL}/payments/{id_pagamento}/pixQrCode"
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            return jsonify({
+                "sucesso": True,
+                "payload_pix": data.get('payload'),
+                "imagem_qr": data.get('encodedImage')
+            })
+        else:
+            logger.error(f"❌ Erro Asaas Recuperação: {response.text}")
+            return jsonify({"erro": "Pagamento expirado ou não encontrado."}), 400
+
+    except Exception as e:
+        logger.error(f"Erro ao recuperar Pix: {e}")
+        return jsonify({"erro": "Falha interna"}), 500
 
 
 # ===================================================
