@@ -1,83 +1,122 @@
-import os
+import logging
 from datetime import datetime
 from typing import Dict, Any
-from data_manager import carregar_json, salvar_json
+
+# Importações da Nova Arquitetura
+from data_manager import mongo_db
 from schema import obter_schema_padrao_global
 
-# Configuração de Caminhos
-CAMINHO_DIR = "memoria_global"
-CAMINHO_ARQUIVO = os.path.join(CAMINHO_DIR, "memoria_global.json")
+# Configuração de Logs
+logger = logging.getLogger("AURA_DATA_GLOBAL")
+
+# Constantes do Banco
+COLECAO_CONFIGS = "configs"
+ID_GLOBAL = "global_state"
+
+# ==============================================================
+# 🌍 GERENCIADOR DE ESTADO GLOBAL (SINGLETON)
+# ==============================================================
 
 def carregar_memoria_global() -> Dict[str, Any]:
     """
-    Carrega o estado global da IA (afinidade, stats, etc).
-    Usa o Guardião (data_manager) para garantir integridade.
+    Busca o documento único de configuração global no MongoDB.
+    Se não existir, cria um novo padrão.
     """
-    padrao = obter_schema_padrao_global()
-    return carregar_json(CAMINHO_ARQUIVO, schema_padrao=padrao)
+    if mongo_db is None:
+        return obter_schema_padrao_global()
+
+    try:
+        colecao = mongo_db[COLECAO_CONFIGS]
+        doc = colecao.find_one({"_id": ID_GLOBAL})
+        
+        if not doc:
+            logger.warning("🌍 Estado Global não encontrado. Criando novo seed...")
+            novo_global = obter_schema_padrao_global()
+            novo_global["_id"] = ID_GLOBAL
+            colecao.insert_one(novo_global)
+            return novo_global
+            
+        return doc
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar global: {e}")
+        return obter_schema_padrao_global()
 
 def salvar_memoria_global(dados: Dict[str, Any]) -> bool:
-    """Persiste o estado global de forma segura."""
-    return salvar_json(CAMINHO_ARQUIVO, dados)
-
-# --- Lógica de Estado Global (Business Logic) ---
-
-def registrar_interacao_global(sentimento: str = "neutro", mensagem: str = "") -> Dict[str, Any]:
     """
-    Registra uma interação no histórico e recalcula afinidade/estatísticas.
+    Atualiza o documento global.
     """
-    mg = carregar_memoria_global()
-    ts = str(datetime.now())
+    if mongo_db is None: return False
     
-    entry = {
-        "sentimento": sentimento,
-        "mensagem": mensagem,
-        "timestamp": ts
-    }
-    
-    # 1. Adiciona ao Histórico (Defensivo: cria lista se não existir)
-    if "interacoes" not in mg: mg["interacoes"] = []
-    mg["interacoes"].append(entry)
-    
-    # 2. Atualiza Estatísticas
-    if "estatisticas" not in mg: 
-        mg["estatisticas"] = {"positivas": 0, "negativas": 0, "neutras": 0, "total": 0}
-        
-    stats = mg["estatisticas"]
-    stats["total"] += 1
-    
-    if sentimento == "positivo": 
-        stats["positivas"] += 1
-    elif sentimento == "negativo": 
-        stats["negativas"] += 1
-    else: 
-        stats["neutras"] += 1
-    
-    # 3. Atualiza Afinidade (Lógica Refinada)
-    # A IA valoriza consistência. Interações neutras também ajudam um pouco (atenção).
-    if "afinidade" not in mg:
-        mg["afinidade"] = {"score": 50, "min": 0, "max": 100}
+    try:
+        dados["ultima_atualizacao"] = str(datetime.now())
+        # Proteção para não tentar alterar o _id imutável
+        dados_salvar = dados.copy()
+        if "_id" in dados_salvar:
+            del dados_salvar["_id"]
 
-    score_atual = mg["afinidade"].get("score", 50)
-    delta = 0
-    
-    if sentimento == "positivo": 
-        delta = 2.5  # Sobe com elogios
-    elif sentimento == "negativo": 
-        delta = -5.0 # Cai o dobro com ofensas (IA sensível)
-    elif sentimento == "neutro": 
-        delta = 0.5  # Sobe devagar apenas por interagir
-    
-    # Matemáticazinha para garantir limites (Clamp 0-100)
-    novo_score = max(0, min(100, score_atual + delta))
-    
-    mg["afinidade"]["score"] = int(novo_score) # Arredonda para inteiro
-    mg["afinidade"]["ultima_atualizacao"] = ts
+        mongo_db[COLECAO_CONFIGS].update_one(
+            {"_id": ID_GLOBAL},
+            {"$set": dados_salvar},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar global: {e}")
+        return False
 
-    salvar_memoria_global(mg)
-    return entry
+# ==============================================================
+# 📊 ANALYTICS & MONITORAMENTO (SEM DADOS SENSÍVEIS)
+# ==============================================================
 
-def obter_afinidade() -> int:
-    """Retorna o score de afinidade atual (0 a 100)."""
-    mg = carregar_memoria_global()
-    return mg.get("afinidade", {}).get("score", 50)
+def registrar_interacao_global(sentimento: str = "neutro") -> bool:
+    """
+    Incrementa os contadores de uso do sistema.
+    NÃO SALVA MAIS O TEXTO DA MENSAGEM (Privacidade + Performance).
+    """
+    if mongo_db is None: return False
+
+    try:
+        # Mapeamento para o campo correto no Schema
+        campo_stats = "neutras"
+        if sentimento == "positivo": campo_stats = "positivas"
+        elif sentimento == "negativo": campo_stats = "negativas"
+
+        # Operação Atômica ($inc) - Seguro para concorrência
+        mongo_db[COLECAO_CONFIGS].update_one(
+            {"_id": ID_GLOBAL},
+            {
+                "$inc": {
+                    f"analytics.mensagens_trocadas": 1,
+                    # Se você quiser manter contagem por sentimento no futuro:
+                    # f"analytics.sentimentos.{campo_stats}": 1 
+                },
+                "$set": {"ultima_atualizacao": str(datetime.now())}
+            }
+        )
+        return True
+    except Exception as e:
+        logger.error(f"⚠️ Erro ao registrar analytics: {e}")
+        return False
+
+def atualizar_cache_ranking(lista_ranking: list):
+    """
+    Salva o Top 100 calculado no documento global para acesso rápido.
+    Evita ter que calcular o ranking toda vez que alguém abre o app.
+    """
+    if mongo_db is None: return False
+    
+    try:
+        mongo_db[COLECAO_CONFIGS].update_one(
+            {"_id": ID_GLOBAL},
+            {
+                "$set": {
+                    "ranking_global_cache.top_100": lista_ranking,
+                    "ranking_global_cache.ultima_atualizacao": str(datetime.now())
+                }
+            }
+        )
+        logger.info("🏆 Cache de Ranking Global atualizado.")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar cache ranking: {e}")
+        return False

@@ -9,11 +9,11 @@ from dotenv import load_dotenv
 # Carrega variáveis
 load_dotenv()
 
-# Importações internas
-from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
-from data_manager import atualizar_plano_mestre
-from logic_gamificacao import gerar_missoes_diarias
-from logic_feedback import gerar_feedback_emocional
+# Importações internas da Nova Arquitetura
+from data_user import carregar_memoria, salvar_memoria
+# CORREÇÃO: Removemos a importação condicional quebrada da linha 14
+# Importamos apenas o necessário para o chat otimizado
+from data_manager import mongo_db, DESCENDING
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -34,42 +34,19 @@ else:
     logger.warning("⚠️ OPENAI_API_KEY não encontrada no .env")
 
 # ======================================================
-# 🛠️ DEFINIÇÃO DAS FERRAMENTAS (ESTRUTURA AURA HYBRID)
+# 🛠️ DEFINIÇÃO DAS FERRAMENTAS (SCHEMA DE FUNÇÕES)
 # ======================================================
 
 SCHEMA_EXERCICIO = {
     "type": "object",
     "properties": {
-        "exercicio": {
-            "type": "string", 
-            "description": "Nome do exercício ou Bloco. Ex: 'Supino' ou 'Natação - Série A'."
-        },
-        "tipo": {
-            "type": "string", 
-            "enum": ["forca", "cardio"],
-            "description": "Selecione 'forca' para musculação/calistenia ou 'cardio' para corrida/bike/natação."
-        },
-        "periodo": {
-            "type": "string", 
-            "enum": ["unico", "manha", "tarde"],
-            "description": "CRÍTICO PARA HÍBRIDOS: Use 'manha' ou 'tarde'. Se for musculação à tarde, repita 'tarde' em TODOS os exercícios da sessão."
-        },
-        "series": {
-            "type": "string", 
-            "description": "Ex: '4x' (Use apenas para força)."
-        },
-        "reps": {
-            "type": "string", 
-            "description": "Ex: '10-12' (Use apenas para força)."
-        },
-        "duracao": {
-            "type": "string", 
-            "description": "Tempo/Distância. Ex: '45min', '5km', 'Até a falha'."
-        },
-        "detalhes": {
-            "type": "string", 
-            "description": "OBRIGATÓRIO PARA CARDIO: Descreva aquecimento, série principal e desaquecimento aqui. Seja técnico."
-        }
+        "exercicio": {"type": "string", "description": "Nome do exercício. Ex: 'Supino Reto'."},
+        "tipo": {"type": "string", "enum": ["forca", "cardio"]},
+        "periodo": {"type": "string", "enum": ["unico", "manha", "tarde"]},
+        "series": {"type": "string"},
+        "reps": {"type": "string"},
+        "duracao": {"type": "string"},
+        "detalhes": {"type": "string"}
     },
     "required": ["exercicio", "tipo", "periodo"]
 }
@@ -79,7 +56,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva o plano alimentar.",
+            "description": "Salva o plano alimentar estruturado no banco de dados.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -104,11 +81,11 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "Salva a rotina de treinos.",
+            "description": "Salva a rotina de treinos semanal no banco de dados.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "foco_atual": {"type": "string", "description": "Ex: Híbrido (Maratona + Força)"},
+                    "foco_atual": {"type": "string"},
                     "dicas_tecnicas": {"type": "string"},
                     "segunda": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "terca": {"type": "array", "items": SCHEMA_EXERCICIO},
@@ -124,130 +101,164 @@ TOOLS_AURA = [
 ]
 
 # ======================================================
-# 💬 CÉREBRO DA IA (PROCESSAMENTO DE COMANDO)
+# 💬 CÉREBRO DA IA (PROCESSAMENTO COM TEXTO + CONTEXTO)
 # ======================================================
 
-def processar_comando(mensagem: str) -> str:
-    # 1. Carrega dados
-    memoria = carregar_memoria()
+def processar_comando(user_id: str, mensagem: str) -> str:
+    """
+    Recebe o ID do usuário e a mensagem.
+    Gerencia contexto, chama OpenAI e executa funções no banco.
+    """
+    if not user_id:
+        return "⚠️ Erro: Usuário não identificado."
+
+    # 1. Carrega dados do Usuário (Contexto Rico)
+    memoria = carregar_memoria(user_id)
     jogador = memoria.get("jogador", {})
-    historico_bruto = memoria.get("historico", [])
     
     xp = jogador.get("experiencia", 0)
     nivel = jogador.get("nivel", 1)
-    coins = jogador.get("saldo_coins", 0)
+    nome = jogador.get("nome", "Atleta")
+    
+    # Busca histórico recente na coleção de Chats (Otimizado)
+    historico_recente = _buscar_historico_recente(user_id, limite=6)
 
-    # 2. Prompt de Sistema (AURA COACH - MODO HÍBRIDO PRO)
+    # 2. Prompt de Sistema (AURA COACH - MODO HÍBRIDO)
     prompt_sistema = {
         "role": "system", 
         "content": (
             f"Você é o Mestre da AURA, treinador de elite.\n"
-            f"Atleta: {jogador.get('nome', 'Atleta')} | Nível {nivel}\n\n"
-            f"REGRA DE OURO:\n"
-            f"Use a ferramenta IMEDIATAMENTE. NÃO escreva o treino no chat. Priorize a estrutura JSON.\n\n"
-            f"DIRETRIZES PARA TREINO HÍBRIDO (CRÍTICO):\n"
-            f"1. DIVISÃO: Se o pedido for dois turnos, use 'periodo': 'manha' e 'periodo': 'tarde'.\n"
-            f"2. VOLUME DE FORÇA: O turno de musculação NUNCA deve ter apenas 1 exercício. Gere uma lista completa (6 a 8 exercícios) e marque TODOS eles como 'periodo': 'tarde' (ou manhã).\n"
-            f"3. EXEMPLO HÍBRIDO CORRETO:\n"
-            f"   - Item 1: Corrida (Cardio/Manhã) - Detalhado.\n"
-            f"   - Item 2: Supino (Força/Tarde)\n"
-            f"   - Item 3: Desenvolvimento (Força/Tarde)\n"
-            f"   - Item 4: Elevação Lateral (Força/Tarde)\n"
-            f"   - ... (continue até completar o treino de força).\n"
-            f"4. CARDIO: Use o campo 'detalhes' para explicar o protocolo.\n"
+            f"Atleta: {nome} | Nível {nivel} | XP {xp}\n\n"
+            f"DIRETRIZES:\n"
+            f"1. Se o usuário pedir Dieta ou Treino, use as TOOLS (funções) imediatamente. NÃO escreva o treino no chat.\n"
+            f"2. Para treinos híbridos (dois turnos), use 'periodo': 'manha' e 'periodo': 'tarde' nos exercícios.\n"
+            f"3. Seja sucinto, motivador e técnico (estilo Biohacker/Estoico).\n"
         )
     }
 
-    # 3. Histórico Sanitizado
-    mensagens_para_enviar = [prompt_sistema] + _sanitizar_historico(historico_bruto, limite=6)
+    # 3. Montagem das Mensagens (Sistema + Histórico + Nova Msg)
+    mensagens_para_enviar = [prompt_sistema] + historico_recente
     mensagens_para_enviar.append({"role": "user", "content": mensagem})
 
-    # 4. Lógica de Resposta
+    # 4. Lógica de Resposta Rápida (Atalhos locais)
     texto_resposta = "..."
     msg_lower = mensagem.lower()
 
     if "missões" in msg_lower or "missoes" in msg_lower:
+        # Atalho para não gastar token com leitura de missão simples
         missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
-        pendentes = [m['descricao'] for m in missoes if not m['concluida']]
+        pendentes = [m['descricao'] for m in missoes if not m.get('concluida')]
         if pendentes:
-            texto_resposta = f"🎯 Pendentes: {', '.join(pendentes)}."
+            texto_resposta = f"🎯 Pendentes de hoje: {', '.join(pendentes)}."
         else:
-            texto_resposta = "🏆 Tudo concluído por hoje!"
+            texto_resposta = "🏆 Todas as missões concluídas. Bom descanso."
             
-    elif "xp" in msg_lower:
-        texto_resposta = f"📊 Nível {nivel} | {xp} XP."
+    elif "xp" in msg_lower and len(msg_lower) < 10:
+        texto_resposta = f"📊 Status Atual: Nível {nivel} ({xp} XP)."
 
     else:
+        # 5. Chamada à OpenAI
         try:
             if client:
                 response = client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4o-mini", # Rápido e Eficiente
                     messages=mensagens_para_enviar,
                     tools=TOOLS_AURA,
                     tool_choice="auto",
-                    max_tokens=3500, # Aumentado para garantir volume no híbrido
+                    max_tokens=1500,
                     temperature=0.7
                 )
                 
                 msg_ia = response.choices[0].message
 
+                # Verifica se a IA decidiu usar uma Ferramenta (Salvar Treino/Dieta)
                 if msg_ia.tool_calls:
-                    sucesso_total = False
-                    
-                    for tool_call in msg_ia.tool_calls:
-                        func_name = tool_call.function.name
-                        try:
-                            args = json.loads(tool_call.function.arguments)
-                            
-                            if func_name == "salvar_nova_dieta":
-                                if atualizar_plano_mestre("dieta", args):
-                                    sucesso_total = True
-                                    texto_resposta = "🥗 Dieta montada e salva com sucesso!\n\n👉 Acesse o botão **'Minha Dieta'** no menu para ver seu plano alimentar completo."
-                                    
-                            elif func_name == "salvar_novo_treino":
-                                if atualizar_plano_mestre("treino", args):
-                                    sucesso_total = True
-                                    texto_resposta = "💪 Treino Estruturado Criado!\n\n👉 Acesse o botão **'Meu Treino'** na tela inicial para visualizar sua nova rotina detalhada."
-                        
-                        except Exception as e:
-                            logger.error(f"Erro ao executar tool {func_name}: {e}")
-                            texto_resposta = "⚠️ Ocorreu um erro ao salvar o plano. Tente ser mais específico no pedido."
-
-                    if not sucesso_total:
-                        texto_resposta = "⚠️ Tive um problema ao acessar seu banco de dados. Tente novamente."
-                
+                    texto_resposta = _executar_ferramentas(user_id, msg_ia.tool_calls)
                 else:
                     texto_resposta = msg_ia.content.strip()
 
             else:
-                texto_resposta = "⚠️ IA Offline."
+                texto_resposta = "⚠️ IA Offline (Chave não configurada)."
         except Exception as e:
             logger.error(f"Erro OpenAI: {e}")
-            texto_resposta = "⚠️ Erro de conexão neural. Tente novamente."
+            texto_resposta = "⚠️ O Mestre está meditando (Erro de conexão). Tente novamente."
 
-    _atualizar_historico(memoria, mensagem, texto_resposta)
+    # 6. Salva a interação no histórico (Coleção Chats)
+    _salvar_mensagem_chat(user_id, "user", mensagem)
+    _salvar_mensagem_chat(user_id, "assistant", texto_resposta)
+    
     return texto_resposta
 
 # ======================================================
-# ⚙️ FUNÇÕES AUXILIARES
+# ⚙️ EXECUÇÃO DE FERRAMENTAS (BANCO DE DADOS)
 # ======================================================
 
-def _sanitizar_historico(historico: List[Dict], limite: int = 4) -> List[Dict]:
-    historico_limpo = []
-    recortes = historico[-limite:] if len(historico) >= limite else historico
-    for item in recortes:
-        if "role" in item and "content" in item:
-            historico_limpo.append({"role": item["role"], "content": item["content"]})
-        elif "mensagem" in item and "resposta" in item:
-            historico_limpo.append({"role": "user", "content": item["mensagem"]})
-            historico_limpo.append({"role": "assistant", "content": item["resposta"]})
-    return historico_limpo
+def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
+    """Executa as funções solicitadas pela IA no banco de dados."""
+    # Importação tardia e correta para evitar ciclo
+    from data_manager import salvar_plano 
+    
+    respostas = []
+    
+    for tool in tool_calls:
+        func_name = tool.function.name
+        try:
+            args = json.loads(tool.function.arguments)
+            
+            if func_name == "salvar_nova_dieta":
+                sucesso = salvar_plano(user_id, "dieta", args)
+                if sucesso:
+                    respostas.append("🥗 Protocolo alimentar atualizado e salvo no seu perfil.")
+                else:
+                    respostas.append("⚠️ Falha ao salvar dieta no banco.")
 
-def _atualizar_historico(memoria: Dict, usuario_msg: str, ia_msg: str):
-    if "historico" not in memoria:
-        memoria["historico"] = []
-    memoria["historico"].append({"role": "user", "content": usuario_msg})
-    memoria["historico"].append({"role": "assistant", "content": ia_msg})
-    if len(memoria["historico"]) > 20:
-        memoria["historico"] = memoria["historico"][-20:]
-    salvar_memoria(memoria)
+            elif func_name == "salvar_novo_treino":
+                sucesso = salvar_plano(user_id, "treino", args)
+                if sucesso:
+                    respostas.append("💪 Novo protocolo de treino registrado no sistema.")
+                else:
+                    respostas.append("⚠️ Falha ao salvar treino no banco.")
+                    
+        except Exception as e:
+            logger.error(f"Erro na tool {func_name}: {e}")
+            respostas.append("⚠️ Erro ao processar solicitação estruturada.")
+
+    return "\n".join(respostas)
+
+# ======================================================
+# 💾 GERENCIAMENTO DE CHAT (COLEÇÃO SEPARADA)
+# ======================================================
+
+def _buscar_historico_recente(user_id: str, limite: int = 6) -> List[Dict]:
+    """Busca as últimas N mensagens da coleção 'chats'."""
+    if mongo_db is None: return []
+    
+    try:
+        cursor = mongo_db["chats"].find(
+            {"user_id": str(user_id)}
+        ).sort("timestamp", DESCENDING).limit(limite)
+        
+        # O banco retorna do mais novo para o mais velho, precisamos inverter para a IA ler na ordem certa
+        msgs = []
+        for doc in cursor:
+            msgs.append({"role": doc["role"], "content": doc["content"]})
+        
+        return msgs[::-1] # Inverte a lista
+    except Exception as e:
+        logger.error(f"Erro ao ler chat: {e}")
+        return []
+
+def _salvar_mensagem_chat(user_id: str, role: str, content: str):
+    """Salva uma mensagem na coleção 'chats'."""
+    if mongo_db is None: return
+    
+    try:
+        doc = {
+            "user_id": str(user_id),
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now()
+        }
+        mongo_db["chats"].insert_one(doc)
+    except Exception as e:
+        logger.error(f"Erro ao salvar chat: {e}")

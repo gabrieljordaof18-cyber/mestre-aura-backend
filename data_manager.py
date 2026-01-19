@@ -1,283 +1,261 @@
-import json
 import os
-import shutil
+import logging
 from datetime import datetime
-from pymongo import MongoClient
+from pymongo import MongoClient, DESCENDING
+from bson.objectid import ObjectId
 from dotenv import load_dotenv
+
+# Importação do Schema para garantir consistência
+from schema import obter_schema_padrao_usuario
+
+# Configuração de Logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("AURA_DATA")
 
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Tenta conectar ao MongoDB
+# ==============================================================
+# 🔌 CONEXÃO COM O MONGODB ATLAS (SINGLETON)
+# ==============================================================
+
 MONGO_URI = os.getenv("MONGODB_URI")
 mongo_client = None
 mongo_db = None
 
-if MONGO_URI:
+try:
+    if not MONGO_URI:
+        raise ValueError("MONGODB_URI não encontrada no .env")
+
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # Força um comando para testar a conexão
+    mongo_client.server_info()
+    
+    # Define o Banco de Dados Principal
+    mongo_db = mongo_client["mestre_aura_db"]
+    logger.info("✅ [DATA] Conectado ao MongoDB Atlas (Nuvem) com sucesso.")
+    
+except Exception as e:
+    logger.critical(f"❌ [DATA] ERRO CRÍTICO DE CONEXÃO: {e}")
+    mongo_client = None
+    mongo_db = None
+
+# ==============================================================
+# 👤 GERENCIAMENTO DE USUÁRIOS (USER CORE)
+# ==============================================================
+
+def buscar_usuario_por_id(user_id: str):
+    """Retorna o documento do usuário pelo ID do MongoDB."""
+    if mongo_db is None: return None
     try:
-        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        # Testa conexão
-        mongo_client.server_info()
-        mongo_db = mongo_client["mestre_aura_db"]
-        print("✅ [DATA] Conectado ao MongoDB Atlas (Nuvem)")
+        return mongo_db["users"].find_one({"_id": ObjectId(user_id)})
     except Exception as e:
-        print(f"⚠️ [DATA] Erro conexão Mongo: {e}. Usando modo local.")
-        mongo_client = None
-        mongo_db = None
+        logger.error(f"Erro ao buscar usuário ID {user_id}: {e}")
+        return None
 
-# ==============================================================
-# 🛡️ O GUARDIÃO HÍBRIDO (ARQUIVO + MONGODB)
-# ==============================================================
+def buscar_usuario_por_email(email: str):
+    """Busca usuário por email (Login)."""
+    if mongo_db is None: return None
+    return mongo_db["users"].find_one({"email": email})
 
-def carregar_json(caminho_arquivo, schema_padrao=None):
+def criar_novo_usuario(email: str, nome: str, auth_provider="email"):
     """
-    Carrega dados. Prioridade: MongoDB -> Arquivo Local -> Schema Padrão.
+    Cria um novo usuário usando o SCHEMA PADRÃO oficial.
+    Retorna o documento criado.
     """
-    dados = {}
-    nome_colecao = _definir_colecao(caminho_arquivo)
+    if mongo_db is None: return None
     
-    # 1. Tenta ler do MongoDB
-    if mongo_db is not None:
-        try:
-            colecao = mongo_db[nome_colecao]
-            doc = colecao.find_one({"_id": "main_data"})
-            if doc:
-                del doc["_id"]
-                dados = doc
-                _salvar_arquivo_local(caminho_arquivo, dados)
-                return _garantir_schema(dados, schema_padrao)
-        except Exception as e:
-            print(f"⚠️ Erro leitura Mongo ({nome_colecao}): {e}")
-
-    # 2. Se falhou, tenta Arquivo Local
-    if os.path.exists(caminho_arquivo):
-        try:
-            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-                dados = json.load(f)
-        except Exception:
-            dados = {}
+    # 1. Gera estrutura padrão
+    novo_user = obter_schema_padrao_usuario(email=email, nome=nome)
+    novo_user["auth_provider"] = auth_provider
     
-    # 3. Se tudo falhou, Schema Padrão
-    if not dados and schema_padrao:
-        dados = schema_padrao
-
-    return _garantir_schema(dados, schema_padrao)
-
-
-def salvar_json(caminho_arquivo, dados):
-    """
-    Salva dados no MongoDB E no Arquivo Local.
-    """
-    sucesso_local = _salvar_arquivo_local(caminho_arquivo, dados)
-    sucesso_nuvem = False
-
-    # Tenta salvar na nuvem
-    if mongo_db is not None:
-        try:
-            nome_colecao = _definir_colecao(caminho_arquivo)
-            colecao = mongo_db[nome_colecao]
-            
-            if isinstance(dados, dict):
-                dados["_system_updated_at"] = str(datetime.now())
-            
-            dados_para_salvar = dados.copy()
-            colecao.update_one(
-                {"_id": "main_data"}, 
-                {"$set": dados_para_salvar}, 
-                upsert=True
-            )
-            sucesso_nuvem = True
-        except Exception as e:
-            print(f"⚠️ Erro gravação Mongo: {e}")
-
-    return sucesso_local or sucesso_nuvem
-
-# ==============================================================
-# 🏃 INTEGRAÇÃO STRAVA & RANKING (LEITURA E ESCRITA)
-# ==============================================================
-
-def salvar_conexao_strava(dados_atleta, tokens):
-    """
-    Salva os dados de autenticação do Strava em uma coleção dedicada 'usuarios'.
-    """
-    if mongo_db is None:
-        print("⚠️ [DATA] MongoDB não conectado. Impossível salvar Strava.")
-        return False
-
     try:
-        # Usa uma coleção específica para usuários (separado da memória global do jogo)
-        colecao = mongo_db["usuarios"]
-        
-        strava_id = dados_atleta.get('id')
-        
-        dados_para_salvar = {
-            "strava_id": strava_id,
-            "nome": dados_atleta.get('firstname'),
-            "sobrenome": dados_atleta.get('lastname'),
-            "foto_perfil": dados_atleta.get('profile'),
-            "tokens": {
-                "access_token": tokens.get('access_token'),
-                "refresh_token": tokens.get('refresh_token'),
-                "expires_at": tokens.get('expires_at')
-            },
-            "ultima_atualizacao": datetime.now()
-        }
+        # 2. Insere no banco
+        resultado = mongo_db["users"].insert_one(novo_user)
+        novo_user["_id"] = str(resultado.inserted_id)
+        logger.info(f"🆕 Novo usuário criado: {email} (ID: {novo_user['_id']})")
+        return novo_user
+    except Exception as e:
+        logger.error(f"Erro ao criar usuário: {e}")
+        return None
 
-        # Upsert: Atualiza se existir, cria se não existir
-        colecao.update_one(
-            {"strava_id": strava_id},
-            {"$set": dados_para_salvar},
-            upsert=True
+def atualizar_usuario(user_id: str, dados_atualizacao: dict):
+    """
+    Atualiza campos específicos do usuário.
+    Ex: dados_atualizacao = {"jogador.saldo_coins": 500}
+    """
+    if mongo_db is None: return False
+    try:
+        dados_atualizacao["updated_at"] = str(datetime.now())
+        mongo_db["users"].update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": dados_atualizacao}
         )
-        
-        print(f"✅ [DATA] Usuário Strava ID {strava_id} salvo com sucesso.")
         return True
-        
     except Exception as e:
-        print(f"❌ [DATA] Erro ao salvar dados Strava: {e}")
+        logger.error(f"Erro ao atualizar usuário {user_id}: {e}")
         return False
 
-def ler_dados_jogador():
+# ==============================================================
+# 🏃 INTEGRAÇÃO STRAVA (MULTI-TENANT)
+# ==============================================================
+
+def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
     """
-    Busca os dados do jogador principal na coleção 'usuarios'.
-    Retorna um dicionário com nome, xp e foto.
+    Chamado pelo callback do Strava.
+    Lógica:
+    1. Procura se já existe um usuário com esse strava_id.
+    2. Se existir, atualiza tokens.
+    3. Se não, CRIA um novo usuário via Strava.
     """
-    if mongo_db is None:
-        return None
+    if mongo_db is None: return False
+
+    strava_id = dados_atleta.get('id')
+    email_strava = dados_atleta.get('email') # Nem sempre vem, mas tentamos
+    nome = dados_atleta.get('firstname', 'Atleta')
+    foto = dados_atleta.get('profile', '')
 
     try:
-        # Busca o primeiro usuário encontrado na coleção (Assumindo modo Single Player por enquanto)
-        usuario = mongo_db["usuarios"].find_one()
+        colecao_users = mongo_db["users"]
         
-        if usuario:
-            # Converte ObjectId para string (o JSON não aceita ObjectId puro)
-            if "_id" in usuario:
-                usuario["_id"] = str(usuario["_id"])
-            return usuario
+        # 1. Tenta achar pelo ID do Strava
+        usuario_existente = colecao_users.find_one({"integracoes.strava.atleta_id": strava_id})
+
+        if usuario_existente:
+            # Atualiza tokens e foto
+            colecao_users.update_one(
+                {"_id": usuario_existente["_id"]},
+                {"$set": {
+                    "integracoes.strava.conectado": True,
+                    "integracoes.strava.tokens": tokens,
+                    "profile_picture_url": foto, # Atualiza foto com a do Strava
+                    "updated_at": str(datetime.now())
+                }}
+            )
+            logger.info(f"🔄 Tokens Strava atualizados para usuário existente: {usuario_existente.get('email')}")
+            return True
         else:
-            return None
+            # 2. Novo Usuário via Strava
+            # Primeiro, verificamos se o email já existe (para não duplicar contas)
+            if email_strava:
+                user_por_email = colecao_users.find_one({"email": email_strava})
+                if user_por_email:
+                    # Vincula Strava à conta de email existente
+                    colecao_users.update_one(
+                        {"_id": user_por_email["_id"]},
+                        {"$set": {
+                            "integracoes.strava.atleta_id": strava_id,
+                            "integracoes.strava.conectado": True,
+                            "integracoes.strava.tokens": tokens,
+                            "updated_at": str(datetime.now())
+                        }}
+                    )
+                    return True
+
+            # 3. Criação Zero (Usuário novo mesmo)
+            novo_doc = obter_schema_padrao_usuario(email=f"strava_{strava_id}@aura.app", nome=nome)
+            novo_doc["auth_provider"] = "strava"
+            novo_doc["profile_picture_url"] = foto
+            novo_doc["integracoes"]["strava"] = {
+                "conectado": True,
+                "atleta_id": strava_id,
+                "tokens": tokens
+            }
             
+            colecao_users.insert_one(novo_doc)
+            logger.info(f"🆕 Usuário criado via Strava ID: {strava_id}")
+            return True
+
     except Exception as e:
-        print(f"❌ Erro ao ler jogador: {e}")
-        return None
+        logger.error(f"❌ Erro integração Strava: {e}")
+        return False
+
+def salvar_atividade_strava(user_id: str, dados_atividade: dict):
+    """Salva a atividade crua na coleção 'activities' para histórico."""
+    if mongo_db is None: return
+    try:
+        dados_atividade["user_id"] = str(user_id) # Foreign Key
+        dados_atividade["created_at"] = datetime.now()
+        mongo_db["activities"].insert_one(dados_atividade)
+    except Exception as e:
+        logger.error(f"Erro ao salvar atividade: {e}")
+
+# ==============================================================
+# 🏆 RANKING GLOBAL (FILTRADO)
+# ==============================================================
 
 def obter_ranking_global(limite=50):
     """
-    Retorna a lista dos Top Jogadores ordenada por XP.
-    Essa função é essencial para a rota /cla/ranking.
+    Retorna Top Jogadores por XP.
+    Filtra usuários deletados ou bots.
     """
     if mongo_db is None: return []
     
     try:
-        # Busca no banco, ordena por xp_total descrescente (-1) e limita
-        cursor = mongo_db["usuarios"].find(
-            {}, # Filtro vazio = pega todos
-            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0} # Só traz estes campos
-        ).sort("xp_total", -1).limit(limite)
+        colecao = mongo_db["users"]
+        cursor = colecao.find(
+            {"plano": {"$ne": "banned"}}, # Exemplo de filtro
+            {
+                "jogador.nome": 1, 
+                "profile_picture_url": 1, 
+                "jogador.experiencia": 1, 
+                "jogador.nivel": 1, 
+                "jogador.titulo_atual": 1,
+                "_id": 0
+            }
+        ).sort("jogador.experiencia", DESCENDING).limit(limite)
         
-        ranking = list(cursor)
-        
-        # Adiciona a posição (1º, 2º, 3º) manualmente
-        for i, jogador in enumerate(ranking):
-            jogador['posicao'] = i + 1
-            if 'xp_total' not in jogador: jogador['xp_total'] = 0
+        ranking = []
+        for i, doc in enumerate(cursor):
+            jogador = doc.get("jogador", {})
+            ranking.append({
+                "posicao": i + 1,
+                "nome": jogador.get("nome", "Anônimo"),
+                "foto": doc.get("profile_picture_url") or "",
+                "xp_total": jogador.get("experiencia", 0),
+                "nivel": jogador.get("nivel", 1),
+                "titulo": jogador.get("titulo_atual", "Iniciado")
+            })
             
         return ranking
     except Exception as e:
-        print(f"❌ Erro ranking: {e}")
+        logger.error(f"❌ Erro no ranking: {e}")
         return []
 
 # ==============================================================
-# 🧠 MEMÓRIA ESTRUTURADA (DIETA & TREINO - NOVO)
+# 🧠 PLANOS MESTRE (DIETA E TREINO)
 # ==============================================================
 
-def atualizar_plano_mestre(tipo_plano, conteudo):
+def salvar_plano(user_id: str, tipo: str, conteudo: dict):
     """
-    Atualiza especificamente a dieta ou o treino do usuário.
-    tipo_plano: "dieta" ou "treino"
-    conteudo: Dicionário (JSON) com os dados estruturados.
+    Salva dieta ou treino na coleção 'plans'.
+    tipo: 'dieta' ou 'treino'
     """
-    if mongo_db is None:
-        print("⚠️ [DATA] MongoDB não conectado. Impossível salvar plano.")
-        return False
-
+    if mongo_db is None: return False
     try:
-        # Define o campo a ser atualizado no MongoDB
-        campo_banco = f"plano_{tipo_plano}" # vira "plano_dieta" ou "plano_treino"
+        colecao_plans = mongo_db["plans"]
         
-        # Busca o usuário (Assumindo single player/primeiro usuário como na função ler_dados_jogador)
-        usuario = mongo_db["usuarios"].find_one()
+        # Upsert: Atualiza o plano existente daquele tipo para aquele usuário
+        filtro = {"user_id": str(user_id), "tipo": tipo}
+        dados = {
+            "user_id": str(user_id),
+            "tipo": tipo,
+            "conteudo": conteudo,
+            "updated_at": datetime.now()
+        }
         
-        if usuario:
-            mongo_db["usuarios"].update_one(
-                {"_id": usuario["_id"]},
-                {
-                    "$set": {
-                        campo_banco: conteudo,
-                        f"data_atualizacao_{tipo_plano}": str(datetime.now())
-                    }
-                }
-            )
-            print(f"✅ [DATA] {tipo_plano.capitalize()} atualizado com sucesso!")
-            return True
-        else:
-            print("❌ [DATA] Usuário não encontrado para salvar plano.")
-            return False
-            
-    except Exception as e:
-        print(f"❌ [DATA] Erro ao atualizar plano: {e}")
-        return False
-
-def ler_plano_mestre(tipo_plano):
-    """
-    Retorna apenas o JSON do plano solicitado (dieta ou treino).
-    """
-    if mongo_db is None: return {}
-    
-    try:
-        usuario = mongo_db["usuarios"].find_one()
-        if usuario:
-            campo = f"plano_{tipo_plano}"
-            return usuario.get(campo, {}) # Retorna vazio se não tiver plano ainda
-        return {}
-    except Exception as e:
-        print(f"❌ Erro ao ler plano: {e}")
-        return {}
-
-# ==============================================================
-# ⚙️ FUNÇÕES AUXILIARES INTERNAS
-# ==============================================================
-
-def _salvar_arquivo_local(caminho, dados):
-    caminho_temp = caminho + ".tmp"
-    dir_pai = os.path.dirname(caminho)
-    if dir_pai and not os.path.exists(dir_pai):
-        os.makedirs(dir_pai, exist_ok=True)
-
-    try:
-        with open(caminho_temp, 'w', encoding='utf-8') as f:
-            json.dump(dados, f, indent=4, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(caminho_temp, caminho)
+        colecao_plans.update_one(filtro, {"$set": dados}, upsert=True)
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erro ao salvar plano {tipo}: {e}")
         return False
 
-def _garantir_schema(dados, schema):
-    if schema:
-        return _mesclar_dicionarios(schema.copy(), dados)
-    return dados
-
-def _mesclar_dicionarios(padrao, atual):
-    for chave, valor_padrao in padrao.items():
-        if chave not in atual:
-            atual[chave] = valor_padrao
-        elif isinstance(valor_padrao, dict) and isinstance(atual[chave], dict):
-            _mesclar_dicionarios(valor_padrao, atual[chave])
-    return atual
-
-def _definir_colecao(caminho):
-    if "memoria_global" in caminho: return "global_memory"
-    if "banco_de_missoes" in caminho: return "missions_db"
-    return "user_memory"
+def ler_plano(user_id: str, tipo: str):
+    """Recupera o plano atual do usuário."""
+    if mongo_db is None: return {}
+    try:
+        doc = mongo_db["plans"].find_one({"user_id": str(user_id), "tipo": tipo})
+        return doc.get("conteudo", {}) if doc else {}
+    except Exception as e:
+        logger.error(f"Erro ao ler plano {tipo}: {e}")
+        return {}

@@ -6,59 +6,74 @@ from data_user import carregar_memoria
 logger = logging.getLogger("AURA_LOGIC_FEEDBACK")
 
 # ======================================================
-# 🧭 FUNÇÃO — Gerar Feedback Emocional Inteligente
+# 🧭 FUNÇÃO — Gerar Feedback Emocional (Contexto User)
 # ======================================================
 
-def gerar_feedback_emocional(memoria: Optional[Dict[str, Any]] = None) -> str:
+def gerar_feedback_emocional(user_id: str) -> str:
     """
     Gera uma mensagem curta, empática e acionável com base na energia,
-    sono, HRV e humor do jogador. Não altera histórico.
+    sono e HRV do jogador específico.
     """
-    if memoria is None:
-        memoria = carregar_memoria()
+    if not user_id:
+        return "Aguardando identificação do atleta..."
+
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return "Iniciando protocolos de monitoramento..."
     
     dados_fisio = memoria.get("dados_fisiologicos", {})
 
-    # 1. Extração Higienizada dos Dados (Padrão Sênior)
-    energia = _extrair_valor(dados_fisio, "energia", "nivel", 50)
-    sono = _extrair_valor(dados_fisio, "sono", "horas", 7.0)
+    # 1. Extração Higienizada dos Dados
+    # Usamos 0 como padrão para detectar se há dados reais
+    energia = _extrair_valor(dados_fisio, "energia", "nivel", 0)
+    sono = _extrair_valor(dados_fisio, "sono", "horas", 0)
     hrv = _extrair_valor(dados_fisio, "hrv", "valor", 0)
+
+    # 2. Verificação de "Cold Start" (Usuário Novo sem dados)
+    # Se tudo for zero, não adianta dar feedback.
+    if energia == 0 and sono == 0:
+        return "Sincronize seus dispositivos ou registre seu dia para receber insights."
 
     partes = []
 
-    # 2. Análise de Energia
-    if energia >= 90:
-        partes.append("Energia ótima — aproveite para um treino técnico e pesado hoje.")
-    elif energia >= 75:
-        partes.append("Boa energia — foque em qualidade de execução.")
-    elif energia >= 60:
-        partes.append("Energia moderada — priorize movimentos compostos controlados.")
-    else:
-        partes.append("Baixa energia — considere recuperação ativa e sono extra.")
-
-    # 3. Análise de Sono
-    if sono >= 8:
-        partes.append("Sono restaurador — recuperação muscular favorecida.")
-    elif sono >= 7:
-        partes.append("Sono aceitável — mantenha hidratação e proteína pós-treino.")
-    else:
-        partes.append("Sono abaixo do ideal — evite treinos extremamente intensos hoje.")
-
-    # 4. Análise de HRV (Indicador de Stress)
-    if hrv > 0: # Só comenta se tiver dados
-        if hrv >= 80:
-            partes.append("HRV alta — estado de recuperação excelente.")
-        elif hrv >= 60:
-            partes.append("HRV estável — tendência neutra/positiva.")
+    # 3. Análise de Energia (Se disponível)
+    if energia > 0:
+        if energia >= 90:
+            partes.append("Energia ótima — aproveite para um treino técnico e pesado.")
+        elif energia >= 75:
+            partes.append("Boa energia — foque em qualidade de execução.")
+        elif energia >= 60:
+            partes.append("Energia moderada — priorize movimentos controlados.")
         else:
-            partes.append("HRV baixa — sistema nervoso sob stress, cuidado com sobrecarga.")
+            partes.append("Baixa energia — considere recuperação ativa e sono extra.")
 
-    # 5. Síntese da Resposta
-    mensagem = " ".join(partes[:3])
+    # 4. Análise de Sono (Se disponível)
+    if sono > 0:
+        if sono >= 8:
+            partes.append("Sono restaurador — recuperação muscular favorecida.")
+        elif sono >= 7:
+            partes.append("Sono aceitável — mantenha a hidratação.")
+        else:
+            partes.append("Sono abaixo do ideal — evite treinos extremos hoje.")
+
+    # 5. Análise de HRV (Indicador de Stress)
+    if hrv > 0:
+        if hrv >= 80:
+            partes.append("HRV alta — recuperação excelente.")
+        elif hrv >= 60:
+            partes.append("HRV estável — tendência positiva.")
+        else:
+            partes.append("HRV baixa — sistema nervoso sob stress, cuidado com a carga.")
+
+    # 6. Síntese da Resposta
+    if not partes:
+        return "Monitorando seus sinais vitais..."
+
+    mensagem = " ".join(partes[:2]) # Pega as 2 dicas mais importantes
     
-    # Corte de segurança para UI (Mobile)
-    if len(mensagem) > 220:
-        mensagem = mensagem[:217] + "..."
+    # Corte de segurança para UI (Mobile não quebrar layout)
+    if len(mensagem) > 180:
+        mensagem = mensagem[:177] + "..."
 
     return mensagem
 

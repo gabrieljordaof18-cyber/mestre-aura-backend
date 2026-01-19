@@ -1,67 +1,65 @@
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
-from sensores import coletar_dados 
+
+# Importações da Nova Arquitetura
 from data_user import carregar_memoria, salvar_memoria
+# O módulo 'sensores' será refatorado a seguir para aceitar os argumentos novos
+from sensores import coletar_dados 
 
 # Configuração de Logs
-logger = logging.getLogger("AURA_SENSORES")
+logger = logging.getLogger("AURA_DATA_SENSORES")
 
 # ======================================================
-# ⚙️ FUNÇÃO 3 — Obter Dados Fisiológicos (Otimizada)
+# ⚙️ ORQUESTRADOR DE DADOS FISIOLÓGICOS (SAAS)
 # ======================================================
-def obter_dados_fisiologicos(memoria: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+
+def obter_dados_fisiologicos(user_id: str) -> Dict[str, Any]:
     """
-    Atualiza os dados fisiológicos a partir do módulo sensores.
-    Gerencia fallback de simulação e evita inchaço de logs.
+    1. Carrega o usuário.
+    2. Pega os tokens de integração (Strava, etc).
+    3. Chama a coleta externa.
+    4. Atualiza o banco apenas se houver dados novos.
     """
-    if memoria is None:
-        memoria = carregar_memoria()
+    if not user_id:
+        logger.warning("⚠️ Tentativa de obter dados sem user_id.")
+        return {}
+
+    # 1. Carrega Perfil para obter Tokens
+    usuario = carregar_memoria(user_id)
+    if not usuario:
+        return {}
+
+    dados_atuais = usuario.get("dados_fisiologicos", {})
+    integracoes = usuario.get("integracoes", {})
 
     try:
-        # 1. Coleta Real
-        novos_dados = coletar_dados() 
+        # 2. Coleta Real (Passando contexto do usuário)
+        # A função coletar_dados agora receberá o ID e as configurações de integração
+        novos_dados = coletar_dados(user_id, integracoes)
         
-        if not isinstance(novos_dados, dict):
-            raise ValueError(f"Formato inválido retornado pelos sensores: {type(novos_dados)}")
+        # Se retornou None ou vazio, significa que não houve sincronização nova
+        if not novos_dados:
+            # Retorna o cache atual para não quebrar o frontend
+            return dados_atuais
 
-        # 2. Atualização de Estado
-        if "dados_fisiologicos" not in memoria:
-            memoria["dados_fisiologicos"] = {}
+        # 3. Atualização de Estado (Merge Inteligente)
+        if "dados_fisiologicos" not in usuario:
+            usuario["dados_fisiologicos"] = {}
 
-        memoria["dados_fisiologicos"].update(novos_dados)
-        memoria["dados_fisiologicos"]["ultima_sincronizacao"] = str(datetime.now())
+        # Atualiza apenas os campos retornados
+        usuario["dados_fisiologicos"].update(novos_dados)
+        usuario["dados_fisiologicos"]["ultima_sincronizacao"] = str(datetime.now())
         
-        # 3. Log Otimizado (Sem salvar dados brutos para não pesar o JSON)
-        if "logs" not in memoria: memoria["logs"] = []
+        # 4. Salva no Banco (Sem logs internos inúteis)
+        sucesso = salvar_memoria(user_id, usuario)
         
-        # Mantemos apenas os últimos 50 logs para não travar o arquivo local
-        if len(memoria["logs"]) > 50:
-            memoria["logs"].pop(0)
-
-        memoria["logs"].append({
-            "tipo": "SINCRONIZACAO_SENSORES",
-            "data": str(datetime.now()),
-            "status": "sucesso"
-        })
+        if sucesso:
+            logger.info(f"✅ Dados fisiológicos atualizados para user {user_id}")
         
-        salvar_memoria(memoria)
-        return novos_dados
+        return usuario["dados_fisiologicos"]
 
     except Exception as e:
-        logger.warning(f"⚠️ Erro nos sensores ({e}). Ativando modo simulação.")
-        
-        # 4. Fallback (Modo Simulado)
-        dados = memoria.get("dados_fisiologicos", {})
-        
-        # Pequena variação para não parecer estático
-        fc_atual = dados.get("frequencia_cardiaca", 72)
-        hrv_atual = dados.get("variabilidade_hrv", 75)
-
-        dados["frequencia_cardiaca"] = int(max(55, min(160, fc_atual + 1)))
-        dados["variabilidade_hrv"] = float(round(max(20, min(120, hrv_atual + 0.5)), 1))
-        dados["ultima_sincronizacao"] = str(datetime.now())
-        
-        memoria["dados_fisiologicos"] = dados
-        salvar_memoria(memoria)
-        return dados
+        logger.error(f"❌ Erro ao processar sensores para {user_id}: {e}")
+        # Em caso de erro, Fallback para dados em cache (nunca inventar dados)
+        return dados_atuais

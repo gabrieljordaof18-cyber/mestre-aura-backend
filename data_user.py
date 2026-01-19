@@ -1,48 +1,83 @@
 import logging
-from typing import Dict, Any
-from data_manager import carregar_json, salvar_json
+from typing import Dict, Any, Optional
+
+# Importações do novo Data Manager (MongoDB)
+from data_manager import buscar_usuario_por_id, atualizar_usuario
 from schema import obter_schema_padrao_usuario
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_DATA_USER")
 
-# Caminho fixo da memória local
-CAMINHO_MEMORIA = "memoria.json"
+# ==============================================================
+# 👤 CAMADA DE SERVIÇO DO USUÁRIO
+# ==============================================================
 
-def carregar_memoria() -> Dict[str, Any]:
+def carregar_memoria(user_id: str) -> Dict[str, Any]:
     """
-    Carrega perfil do jogador usando o Guardião e o Schema.
-    Retorna sempre um dicionário válido.
+    Carrega o perfil completo do usuário pelo ID do MongoDB.
     """
-    padrao = obter_schema_padrao_usuario()
-    return carregar_json(CAMINHO_MEMORIA, schema_padrao=padrao)
+    if not user_id:
+        logger.warning("⚠️ Tentativa de carregar memória sem user_id.")
+        return {}
 
-def salvar_memoria(dados: Dict[str, Any]) -> bool:
+    usuario = buscar_usuario_por_id(user_id)
+    
+    if usuario:
+        # Converte _id para string para facilitar manipulação no Python/Frontend
+        usuario["_id"] = str(usuario["_id"])
+        return usuario
+    else:
+        logger.error(f"❌ Usuário {user_id} não encontrado no banco.")
+        return {}
+
+def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
     """
-    Salva perfil do jogador de forma segura.
+    Salva/Atualiza os dados do perfil do jogador no MongoDB.
     """
-    try:
-        resultado = salvar_json(CAMINHO_MEMORIA, dados)
-        return resultado
-    except Exception as e:
-        logger.error(f"❌ Erro crítico ao salvar memória do usuário: {e}")
+    if not user_id:
         return False
 
-# --- Funções Utilitárias ---
+    try:
+        # Proteção: Remove _id dos dados para evitar erro de imutabilidade do Mongo
+        dados_para_salvar = dados.copy()
+        if "_id" in dados_para_salvar:
+            del dados_para_salvar["_id"]
 
-def redefinir_metas_usuario() -> bool:
-    """Reseta as metas do usuário para o padrão do schema."""
-    logger.info("🔄 Redefinindo metas do usuário para o padrão.")
-    memoria = carregar_memoria()
+        # Chama o Data Manager para fazer o update
+        # O MongoDB é inteligente: se passarmos o objeto inteiro, ele atualiza os campos.
+        sucesso = atualizar_usuario(user_id, dados_para_salvar)
+        return sucesso
+        
+    except Exception as e:
+        logger.error(f"❌ Erro crítico ao salvar memória do usuário {user_id}: {e}")
+        return False
+
+# ==============================================================
+# 🛠️ FUNÇÕES UTILITÁRIAS
+# ==============================================================
+
+def redefinir_metas_usuario(user_id: str) -> bool:
+    """
+    Reseta as metas do usuário específico para o padrão do schema.
+    """
+    logger.info(f"🔄 Redefinindo metas do usuário {user_id}...")
+    
+    memoria = carregar_memoria(user_id)
+    if not memoria: return False
+
     padrao = obter_schema_padrao_usuario()
     
-    # Atualiza apenas a chave de metas
-    if "jogador" in memoria and "metas" in padrao["jogador"]:
+    # Atualiza apenas a chave de metas e preferências
+    if "jogador" in memoria:
         memoria["jogador"]["metas"] = padrao["jogador"]["metas"]
-        return salvar_memoria(memoria)
+        memoria["jogador"]["preferencias"] = padrao["jogador"]["preferencias"]
+        return salvar_memoria(user_id, memoria)
+    
     return False
 
-def obter_status_fisiologico() -> Dict[str, Any]:
-    """Retorna apenas o bloco de dados fisiológicos."""
-    memoria = carregar_memoria()
+def obter_status_fisiologico(user_id: str) -> Dict[str, Any]:
+    """
+    Retorna apenas o bloco de dados fisiológicos para sensores/frontend.
+    """
+    memoria = carregar_memoria(user_id)
     return memoria.get("dados_fisiologicos", {})

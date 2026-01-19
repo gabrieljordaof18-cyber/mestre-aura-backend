@@ -4,104 +4,119 @@
         "descricao": "Beber 2L de água",
         "xp": 50,
         "categoria": "saude",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "habito_02",
         "descricao": "Dormir 8h completas",
         "xp": 100,
         "categoria": "descanso",
-        "tipo_verificacao": "sensor_sono"
+        "tipo_verificacao": "sensor_sono",
+        "ativo": true
     },
     {
         "id": "treino_01",
         "descricao": "Treino intenso (FC > 120bpm)",
         "xp": 150,
         "categoria": "treino",
-        "tipo_verificacao": "sensor_cardio"
+        "tipo_verificacao": "sensor_cardio",
+        "ativo": true
     },
     {
         "id": "mente_01",
         "descricao": "Meditar por 10 minutos",
         "xp": 40,
         "categoria": "mente",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "treino_02",
         "descricao": "Caminhada de 30min",
         "xp": 60,
         "categoria": "treino",
-        "tipo_verificacao": "passos"
+        "tipo_verificacao": "passos",
+        "ativo": true
     },
     {
         "id": "nutri_01",
         "descricao": "Zero açúcar adicionado hoje",
         "xp": 120,
         "categoria": "saude",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "treino_03",
         "descricao": "Alongamento matinal (10 min)",
         "xp": 30,
         "categoria": "treino",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "mente_02",
         "descricao": "Leitura de 10 páginas",
         "xp": 50,
         "categoria": "mente",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "descanso_02",
         "descricao": "Sem telas 1h antes de dormir",
         "xp": 80,
         "categoria": "descanso",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "saude_01",
         "descricao": "Banho gelado (exposição ao frio)",
         "xp": 70,
         "categoria": "saude",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "treino_04",
         "descricao": "Corrida de 5km",
         "xp": 200,
         "categoria": "treino",
-        "tipo_verificacao": "sensor_gps"
+        "tipo_verificacao": "sensor_gps",
+        "ativo": true
     },
     {
         "id": "nutri_02",
         "descricao": "Comer 3 porções de frutas",
         "xp": 40,
         "categoria": "saude",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "mente_03",
         "descricao": "Diário de Gratidão (3 itens)",
         "xp": 45,
         "categoria": "mente",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "saude_02",
         "descricao": "Exposição solar matinal (15 min)",
         "xp": 50,
         "categoria": "saude",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     },
     {
         "id": "treino_05",
         "descricao": "Treino de Força / Musculação",
         "xp": 100,
         "categoria": "treino",
-        "tipo_verificacao": "manual"
+        "tipo_verificacao": "manual",
+        "ativo": true
     }
 ]

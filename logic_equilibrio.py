@@ -1,7 +1,8 @@
 import logging
-from typing import Dict, Any, Union
+from typing import Dict, Any, Optional
+
+# Importações da Nova Arquitetura (Apenas contexto do usuário)
 from data_user import carregar_memoria, salvar_memoria
-from data_global import carregar_memoria_global, salvar_memoria_global
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_LOGIC_EQUILIBRIO")
@@ -14,23 +15,32 @@ PESO_ENERGIA = 0.3
 PESO_HRV = 0.3
 
 # ======================================================
-# ⚖️ LÓGICA DE EQUILÍBRIO (HOMEOSTASE)
+# ⚖️ LÓGICA DE EQUILÍBRIO (HOMEOSTASE - USER SCOPE)
 # ======================================================
 
-def calcular_e_atualizar_equilibrio() -> Dict[str, Any]:
+def calcular_e_atualizar_equilibrio(user_id: str) -> Dict[str, Any]:
     """
-    Lê dados fisiológicos, calcula score de harmonia e sincroniza
-    tanto na memória do usuário quanto na memória global da IA.
+    Lê dados fisiológicos DO USUÁRIO, calcula score de harmonia 
+    e atualiza apenas o perfil dele.
     """
-    memoria = carregar_memoria()
+    if not user_id:
+        logger.warning("⚠️ Tentativa de calcular equilíbrio sem user_id.")
+        return {}
+
+    # 1. Carrega memória específica do usuário
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        logger.error(f"❌ Usuário {user_id} não encontrado para cálculo de equilíbrio.")
+        return {}
+
     dados_fisio = memoria.get("dados_fisiologicos", {})
     
-    # 1. Extração Segura de Dados (Normalização)
+    # 2. Extração Segura de Dados (Normalização)
     sono_val = _extrair_valor(dados_fisio, "sono", "horas", 7.0)
     hrv_val = _extrair_valor(dados_fisio, "hrv", "valor", 50.0)
     energia_val = _extrair_valor(dados_fisio, "energia", "nivel", 50.0)
 
-    # 2. Cálculo dos Scores Normalizados (0 a 100)
+    # 3. Cálculo dos Scores Normalizados (0 a 100)
     
     # Sono: 8h = 100%, 4h = 0% (Clamp entre 0 e 100)
     score_sono = max(0, min(100, (sono_val - 4) * 25))
@@ -41,13 +51,13 @@ def calcular_e_atualizar_equilibrio() -> Dict[str, Any]:
     # Energia: Já vem em 0-100 (Assumindo confiança no sensor)
     score_energia = max(0, min(100, energia_val))
 
-    # 3. Score Final (Ponderado)
+    # 4. Score Final (Ponderado)
     harmonia = (score_sono * PESO_SONO) + (score_energia * PESO_ENERGIA) + (score_hrv * PESO_HRV)
     harmonia_final = int(round(harmonia))
 
     estado_str = _definir_estado(harmonia_final)
 
-    # 4. Atualizar Memória Local (Para o Jogador ver no App)
+    # 5. Atualizar Memória Local (Para o Jogador ver no App)
     memoria["homeostase"] = {
         "score": harmonia_final,
         "estado": estado_str,
@@ -55,30 +65,20 @@ def calcular_e_atualizar_equilibrio() -> Dict[str, Any]:
             "corpo": int(score_hrv),
             "mente": int(score_sono), # Sono como proxy de mente/descanso
             "energia": int(score_energia)
-        }
+        },
+        "ultima_analise": "agora" # Timestamp pode ser inserido pelo data_manager
     }
-    salvar_memoria(memoria)
+    
+    # Salva passando o ID (SaaS)
+    salvar_memoria(user_id, memoria)
 
-    # 5. Atualizar Memória Global (Para a IA lembrar no Chat)
-    try:
-        mg = carregar_memoria_global()
-        
-        # Garante que a estrutura existe (Programação Defensiva)
-        if "homeostase" not in mg:
-            mg["homeostase"] = {}
-            
-        mg["homeostase"]["score_harmonia"] = harmonia_final
-        mg["homeostase"]["estado"] = estado_str
-        mg["homeostase"]["componentes"] = memoria["homeostase"]["componentes"]
-        
-        salvar_memoria_global(mg)
-    except Exception as e:
-        logger.error(f"❌ Erro ao sincronizar memória global: {e}")
+    # NOTA: O bloco de sincronização global foi REMOVIDO conforme solicitado.
+    # O estado de saúde é privado do usuário.
 
-    logger.info(f"⚖️ Equilíbrio atualizado: {harmonia_final}% ({estado_str})")
+    logger.info(f"⚖️ Equilíbrio user {user_id}: {harmonia_final}% ({estado_str})")
     return memoria["homeostase"]
 
-# --- Funções Auxiliares ---
+# --- Funções Auxiliares (Puras) ---
 
 def _extrair_valor(dados: dict, chave: str, subchave: str, padrao: float) -> float:
     """Extrai valor numérico lidando com dicionários ou valores diretos."""

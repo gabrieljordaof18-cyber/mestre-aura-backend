@@ -1,178 +1,51 @@
 import os
-import requests
-from flask import Flask, render_template, request, jsonify, redirect
+import logging
+from flask import Flask, jsonify
 from flask_cors import CORS
+
+# Importação dos Blueprints (Módulos de Rotas)
 from rotas_api import api_bp
-from data_manager import salvar_conexao_strava
-from logic_asaas import criar_cobranca # <--- IMPORTAÇÃO NOVA (ASAAS)
+# OBS: O arquivo rotas_strava.py será criado no próximo passo.
+# Se der erro de importação agora, é normal. Ele sumirá assim que criarmos o arquivo.
+from rotas_strava import strava_bp 
 
-# ===================================================
-# ⚙️ CONFIGURAÇÃO DO SERVIDOR FLASK
-# ===================================================
-app = Flask(__name__, template_folder='templates', static_folder='static')
+# Configuração de Logs (Nuvem)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("AURA_APP")
 
-# LIBERA O ACESSO GERAL (CORS)
-CORS(app)
-
-# 1. REGISTRA AS ROTAS DE API EXISTENTES
-app.register_blueprint(api_bp)
-
-# ===================================================
-# 💸 ROTAS DE PAGAMENTO (ASAAS - NOVO)
-# ===================================================
-
-@app.route('/api/pagamento/criar', methods=['POST'])
-def api_criar_pagamento():
+def create_app():
     """
-    Recebe pedido do Frontend e cria cobrança no Asaas.
+    Fábrica da Aplicação (Padrão robusto para Gunicorn/Render)
     """
-    data = request.json
-    # Espera: { "valor": 1.00, "metodo": "pix", "usuario": { "nome": "Gabriel", "cpf": "..." } }
+    app = Flask(__name__)
     
-    if not data:
-        return jsonify({"erro": "Dados inválidos"}), 400
+    # 1. Segurança e CORS
+    # Permite requisições do seu Frontend (Base44) e locais
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
-    resultado = criar_cobranca(data)
-    
-    if "erro" in resultado:
-        return jsonify(resultado), 400
-        
-    return jsonify(resultado)
+    # 2. Registro de Rotas (Blueprints)
+    app.register_blueprint(api_bp)       # Rotas da API Principal (Usuário, Missões, Pagamento)
+    app.register_blueprint(strava_bp)    # Rotas de Integração Strava (Auth, Webhook)
 
-# ===================================================
-# 🏃 ROTAS DE INTEGRAÇÃO: STRAVA (AUTENTICAÇÃO)
-# ===================================================
-
-@app.route('/auth/strava/login', methods=['GET'])
-def strava_login():
-    client_id = os.getenv('STRAVA_CLIENT_ID')
-    redirect_uri = os.getenv('STRAVA_REDIRECT_URI')
-    
-    strava_auth_url = (
-        f"https://www.strava.com/oauth/authorize?"
-        f"client_id={client_id}&"
-        f"response_type=code&"
-        f"redirect_uri={redirect_uri}&"
-        f"approval_prompt=auto&"
-        f"scope=activity:read_all"
-    )
-    return redirect(strava_auth_url)
-
-@app.route('/auth/strava/callback', methods=['GET'])
-def strava_callback():
-    code = request.args.get('code')
-    
-    if not code:
-        return jsonify({"erro": "Nenhum código recebido do Strava"}), 400
-
-    token_url = "https://www.strava.com/oauth/token"
-    payload = {
-        'client_id': os.getenv('STRAVA_CLIENT_ID'),
-        'client_secret': os.getenv('STRAVA_CLIENT_SECRET'),
-        'code': code,
-        'grant_type': 'authorization_code'
-    }
-    
-    response = requests.post(token_url, data=payload)
-    dados_recebidos = response.json()
-    
-    if response.status_code == 200:
-        athlete_info = dados_recebidos.get('athlete', {})
-        tokens = {
-            "access_token": dados_recebidos.get('access_token'),
-            "refresh_token": dados_recebidos.get('refresh_token'),
-            "expires_at": dados_recebidos.get('expires_at')
-        }
-        
-        sucesso_banco = salvar_conexao_strava(athlete_info, tokens)
-        
-        if sucesso_banco:
-            return """
-            <html>
-                <body style="background-color: #000; color: #0f0; font-family: sans-serif; text-align: center; padding-top: 50px;">
-                    <h1 style="font-size: 3rem;">✅ CONEXÃO ESTABELECIDA!</h1>
-                    <p style="font-size: 1.5rem; color: #fff;">O Mestre da Aura agora está sincronizado com o seu Strava.</p>
-                    <p style="color: #888;">Seus dados foram salvos com segurança no Banco de Dados.</p>
-                    <br>
-                    <p>Pode fechar esta janela e voltar ao App.</p>
-                </body>
-            </html>
-            """
-        else:
-            return jsonify({"erro": "Falha ao salvar no Banco de Dados (MongoDB)"}), 500
-            
-    else:
-        return jsonify({"erro": "Falha ao autenticar com Strava", "detalhes": dados_recebidos}), 400
-
-# ===================================================
-# 🔔 WEBHOOK STRAVA (O OUVIDO DO SISTEMA)
-# ===================================================
-
-@app.route('/webhook', methods=['GET', 'POST'])
-def webhook():
-    # --- FASE 1: VERIFICAÇÃO (HANDSHAKE) ---
-    if request.method == 'GET':
-        mode = request.args.get('hub.mode')
-        token = request.args.get('hub.verify_token')
-        challenge = request.args.get('hub.challenge')
-        VERIFY_TOKEN = "STRAVA_AURA_SECRET" 
-
-        if mode and token:
-            if mode == 'subscribe' and token == VERIFY_TOKEN:
-                return jsonify({"hub.challenge": challenge}), 200
-            else:
-                return jsonify({"erro": "Token invalido"}), 403
-        return "Webhook ativo", 200
-
-    # --- FASE 2: RECEBER DADOS E PROCESSAR (POST) ---
-    if request.method == 'POST':
-        dados_evento = request.json
-        try:
-            from logic_strava import processar_evento_webhook
-            processar_evento_webhook(dados_evento)
-        except ImportError:
-            print("❌ ERRO: O arquivo logic_strava.py não foi encontrado!")
-        except Exception as e:
-            print(f"❌ Erro crítico no webhook: {e}")
-
-        return jsonify({"status": "EVENTO_RECEBIDO"}), 200
-
-# ========================================
-# 🌐 ROTAS DE PÁGINAS (FRONT-END ANTIGO)
-# ========================================
-
-@app.route('/')
-def home():
-    return render_template("index.html")
-
-@app.route('/recurso/mestre')
-def mestre_app():
-    return render_template("mestre_painel.html")
-
-# ===================================================
-# 🕵️ ROTA DE ESPIÃO (DEBUG)
-# ===================================================
-@app.route('/debug/usuarios', methods=['GET'])
-def ver_usuarios_banco():
-    from data_manager import mongo_db
-    
-    if mongo_db is None:
-        return jsonify({"erro": "MongoDB não conectado"}), 500
-
-    try:
-        usuarios = list(mongo_db["usuarios"].find())
-        for user in usuarios:
-            user['_id'] = str(user['_id'])
-            
+    # 3. Rota Raiz (Health Check)
+    # Substitui a antiga página HTML por um JSON de status simples
+    @app.route('/')
+    def health_check():
         return jsonify({
-            "total_usuarios_encontrados": len(usuarios),
-            "dados": usuarios
+            "status": "online",
+            "system": "Aura Performance API",
+            "version": "2.0.1",
+            "env": os.environ.get("FLASK_ENV", "production")
         })
-    except Exception as e:
-        return jsonify({"erro": f"Erro ao ler banco: {str(e)}"}), 500
 
-# ===================================================
-# 🚀 INICIALIZAÇÃO DO SERVIDOR LOCAL
-# ===================================================
+    return app
+
+# Instância da aplicação para o servidor WSGI
+app = create_app()
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5050, debug=True)
+    # Inicialização Local (Dev)
+    # Pega a porta do .env ou usa 5000 como padrão
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🚀 Aura API iniciando na porta {port}...")
+    app.run(host='0.0.0.0', port=port, debug=True)

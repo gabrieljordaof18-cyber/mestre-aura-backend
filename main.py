@@ -1,93 +1,121 @@
 import os
 import logging
+import json
+from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
-# Importa módulos do sistema
+# Importa a aplicação Flask configurada
 from app import app 
-from data_manager import salvar_json
-from schema import obter_schema_padrao_global, obter_schema_padrao_usuario
-from logic_gamificacao import gerar_missoes_diarias
-from logic_equilibrio import calcular_e_atualizar_equilibrio
 
-# Configuração de Logs
+# Importações de Dados (Serão refatorados a seguir, mas já preparamos o terreno)
+# Nota: O data_manager atual ainda não tem a variável mongo_db exportada corretamente,
+# mas vamos corrigir isso no próximo passo (Arquivo 24).
+try:
+    from data_manager import mongo_db
+except ImportError:
+    mongo_db = None
+
+# Configuração de Logs (Formato Nuvem - StreamHandler)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler()] # Garante saída no console do Render
 )
-logger = logging.getLogger("AURA_BOOT")
+logger = logging.getLogger("AURA_MAIN")
 
 # ==============================================================
-# 🛠️ FUNÇÕES DE INICIALIZAÇÃO (BOOT)
+# 🛠️ ROTINAS AUTOMÁTICAS (SCHEDULER)
 # ==============================================================
 
-def verificar_ambiente():
-    """Cria pastas e arquivos essenciais se não existirem."""
-    logger.info("🔹 [BOOT] Verificando integridade do sistema...")
-    
-    # 1. Pastas
-    pastas = ["memoria_global", "logs", "static/images"]
-    for p in pastas:
-        os.makedirs(p, exist_ok=True)
-        
-    # 2. Arquivos de Dados (Garante que existem e são válidos)
-    
-    # Memória Global
-    caminho_global = "memoria_global/memoria_global.json"
-    if not os.path.exists(caminho_global):
-        logger.warning("🔸 Criando Memória Global inicial...")
-        salvar_json(caminho_global, obter_schema_padrao_global())
-        
-    # Memória Usuário
-    caminho_user = "memoria.json"
-    if not os.path.exists(caminho_user):
-        logger.warning("🔸 Criando Memória do Usuário inicial...")
-        salvar_json(caminho_user, obter_schema_padrao_usuario())
-        
-    # Banco de Missões
-    if not os.path.exists("banco_de_missoes.json"):
-        logger.warning("🔸 Criando Banco de Missões padrão...")
-        missoes_padrao = [
-            {"id": "m1", "descricao": "Beber 2L de água", "xp": 50, "categoria": "saude", "tipo_verificacao": "manual"},
-            {"id": "m2", "descricao": "Dormir 8h", "xp": 100, "categoria": "descanso", "tipo_verificacao": "sensor_sono"},
-            {"id": "m3", "descricao": "Treinar 30min", "xp": 80, "categoria": "treino", "tipo_verificacao": "sensor_cardio"}
-        ]
-        salvar_json("banco_de_missoes.json", missoes_padrao)
-
-    logger.info("✅ [BOOT] Sistema de arquivos íntegro.")
-
-def rotina_diaria():
+def job_rotina_diaria_global():
     """
-    Executa tarefas automáticas ao iniciar
-    (Gera missões do dia se ainda não tiver).
+    Executada todo dia à 00:00 (Meia-noite).
+    Responsável por resetar missões diárias de todos os usuários
+    e verificar vencimento de planos.
     """
-    logger.info("🔹 [SISTEMA] Verificando rotinas diárias...")
+    logger.info("🕛 [SCHEDULER] Iniciando rotina da meia-noite...")
+    
+    if mongo_db is not None:
+        try:
+            # Lógica futura:
+            # 1. Buscar todos usuários ativos
+            # 2. Gerar novas missões para eles
+            # 3. Verificar status de assinatura (Vencido -> Free)
+            logger.info("✅ [SCHEDULER] Rotina diária finalizada (Placeholder).")
+        except Exception as e:
+            logger.error(f"❌ [SCHEDULER] Erro na rotina diária: {e}")
+    else:
+        logger.warning("⚠️ [SCHEDULER] Banco desconectado. Pulando rotina.")
+
+def iniciar_scheduler():
+    """Configura e inicia o agendador de tarefas em segundo plano."""
     try:
-        # Gera novas missões se necessário
-        gerar_missoes_diarias()
-        # Recalcula equilíbrio inicial
-        calcular_e_atualizar_equilibrio()
-        logger.info("✅ [SISTEMA] Rotinas concluídas.")
+        scheduler = BackgroundScheduler()
+        # Adiciona o job para rodar todos os dias à meia-noite
+        scheduler.add_job(job_rotina_diaria_global, 'cron', hour=0, minute=0)
+        scheduler.start()
+        logger.info("⏰ [SISTEMA] Agendador (Scheduler) iniciado com sucesso.")
     except Exception as e:
-        logger.error(f"⚠️ Erro na rotina diária: {e}")
+        logger.error(f"❌ [SISTEMA] Falha ao iniciar Scheduler: {e}")
 
 # ==============================================================
-# 🚀 EXECUÇÃO PRINCIPAL
+# 🌱 SEED DATABASE (POPULAR DADOS INICIAIS)
 # ==============================================================
 
+def verificar_seed_missoes():
+    """
+    Verifica se a coleção de missões está vazia. 
+    Se estiver, carrega o JSON padrão para dentro do MongoDB.
+    """
+    if mongo_db is None:
+        return
+
+    try:
+        colecao_missoes = mongo_db["missoes"]
+        contagem = colecao_missoes.count_documents({})
+        
+        if contagem == 0:
+            logger.info("🌱 [SEED] Banco de missões vazio. Populando inicial...")
+            
+            # Tenta ler o arquivo JSON local apenas para a primeira carga
+            if os.path.exists("banco_de_missoes.json"):
+                with open("banco_de_missoes.json", "r", encoding="utf-8") as f:
+                    dados_missoes = json.load(f)
+                    
+                if dados_missoes:
+                    colecao_missoes.insert_many(dados_missoes)
+                    logger.info(f"✅ [SEED] {len(dados_missoes)} missões inseridas no MongoDB.")
+            else:
+                logger.warning("⚠️ Arquivo banco_de_missoes.json não encontrado para seed.")
+        else:
+            logger.info(f"✅ [BOOT] Banco de missões já populado ({contagem} itens).")
+            
+    except Exception as e:
+        logger.error(f"❌ [SEED] Erro ao popular missões: {e}")
+
+# ==============================================================
+# 🚀 ENTRY POINT (PONTO DE PARTIDA)
+# ==============================================================
+
+# Executa verificações apenas se este arquivo for o principal
 if __name__ == '__main__':
-    # 1. Prepara o terreno
-    verificar_ambiente()
-    rotina_diaria()
+    # 1. Inicializa Scheduler
+    iniciar_scheduler()
     
-    # 2. Configuração de Rede
-    # No Render, a porta é fornecida via env. Localmente usamos 5050.
-    porta = int(os.environ.get("PORT", 5050))
+    # 2. Verifica Seed (Popula banco se necessário)
+    # Nota: Isso vai falhar silenciosamente agora se o data_manager não estiver pronto,
+    # mas funcionará assim que corrigirmos o próximo arquivo.
+    verificar_seed_missoes()
+
+    # 3. Configuração de Rede
+    port = int(os.environ.get("PORT", 5000))
     
     logger.info("=========================================")
-    logger.info(f"   🔱 SISTEMA MESTRE DA AURA ONLINE   ")
-    logger.info(f"   👉 Porta: {porta}")
+    logger.info(f"   🔱 AURA PERFORMANCE API ONLINE   ")
+    logger.info(f"   👉 Ambiente: {os.environ.get('FLASK_ENV', 'development')}")
+    logger.info(f"   👉 Porta: {port}")
     logger.info("=========================================")
     
-    # Roda o Flask
-    # host='0.0.0.0' é obrigatório para o Render expor o serviço
-    app.run(host='0.0.0.0', port=porta, debug=True)
+    # Inicia o Servidor
+    app.run(host='0.0.0.0', port=port, use_reloader=False) 
+    # use_reloader=False evita que o Scheduler rode duplicado em dev
