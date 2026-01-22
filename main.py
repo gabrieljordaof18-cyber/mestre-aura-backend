@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# [MUDANÇA] Usamos FastAPI para performance com IA e correção de CORS
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -27,95 +26,177 @@ logger = logging.getLogger("AURA_MAIN")
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
-# --- SCHEDULER (Mantido da sua versão) ---
+# ==============================================================
+# 💾 BANCO DE DADOS EM MEMÓRIA (MOCK PARA MVP)
+# Aqui é onde os treinos e dietas criados pela IA ficarão salvos
+# temporariamente para que as telas 'treino_view' e 'dieta_view' possam ler.
+# ==============================================================
+DB_TREINO = {
+    "titulo": "Treino Full Body (Iniciante)",
+    "descricao": "Treino padrão do sistema para adaptação.",
+    "exercicios": [
+        {"nome": "Agachamento Livre", "series": "3", "reps": "12"},
+        {"nome": "Flexão de Braço", "series": "3", "reps": "10"},
+        {"nome": "Puxada Alta", "series": "3", "reps": "12"}
+    ]
+}
+
+DB_DIETA = {
+    "titulo": "Dieta Equilibrada (Padrão)",
+    "calorias": 2200,
+    "refeicoes": [
+        {"nome": "Café da Manhã", "alimentos": "Ovos mexidos, Pão integral, Café"},
+        {"nome": "Almoço", "alimentos": "Frango grelhado, Arroz, Feijão, Salada"},
+        {"nome": "Jantar", "alimentos": "Peixe, Legumes cozidos"}
+    ]
+}
+
+# --- SCHEDULER ---
 def job_rotina_diaria_global():
     logger.info("🕛 [SCHEDULER] Executando rotina diária...")
-    # Lógica de reset de missões aqui futuramente
 
 scheduler = BackgroundScheduler()
 
-# Ciclo de Vida do App
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Inicia Scheduler
     scheduler.add_job(job_rotina_diaria_global, 'cron', hour=0, minute=0)
     scheduler.start()
     logger.info("⏰ [SISTEMA] Scheduler iniciado.")
     yield
-    # Desliga Scheduler
     scheduler.shutdown()
 
-# Inicializa App
 app = FastAPI(lifespan=lifespan)
 
-# [CRÍTICO] Configuração de CORS (Resolve o erro de conexão)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite conexão de qualquer lugar (Frontend)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Modelo de dados para o Chat
 class ComandoRequest(BaseModel):
     comando: str
 
 # ==============================================================
-# 🛣️ ROTAS DA API
+# 🧠 PROMPT DO SISTEMA (A MÁGICA ACONTECE AQUI)
+# ==============================================================
+SYSTEM_PROMPT = """
+Você é o Mestre da Aura, um treinador de elite e biohacker.
+Sua missão é conversar com o usuário OU executar comandos de criação.
+
+IMPORTANTE:
+1. Se o usuário pedir para CRIAR UM TREINO, não responda texto. Retorne APENAS um JSON estrito neste formato:
+{
+  "tipo": "CRIAR_TREINO",
+  "dados": {
+      "titulo": "Nome do Treino",
+      "descricao": "Breve descrição",
+      "exercicios": [
+          {"nome": "Exercicio", "series": "3", "reps": "12"}
+      ]
+  }
+}
+
+2. Se o usuário pedir para CRIAR UMA DIETA, não responda texto. Retorne APENAS um JSON estrito neste formato:
+{
+  "tipo": "CRIAR_DIETA",
+  "dados": {
+      "titulo": "Nome da Dieta",
+      "calorias": 2500,
+      "refeicoes": [
+          {"nome": "Café", "alimentos": "Item 1, Item 2"},
+          {"nome": "Almoço", "alimentos": "Item 1, Item 2"}
+      ]
+  }
+}
+
+3. Se for apenas uma conversa, dúvida ou motivação, responda normalmente em TEXTO (sem JSON). Seja curto, estoico e motivador.
+"""
+
+# ==============================================================
+# 🛣️ ROTAS
 # ==============================================================
 
 @app.get("/")
 def read_root():
     return {"status": "online", "mensagem": "AURA API Operante 🔱"}
 
-# --- 1. ROTA DO CHAT (IA) ---
+# --- ROTA INTELIGENTE DO CHAT ---
 @app.post("/api/comando")
 async def processar_comando(request: ComandoRequest):
     logger.info(f"📩 Comando recebido: {request.comando}")
+    global DB_TREINO, DB_DIETA # Acessa o banco em memória
     
     if not api_key:
-        raise HTTPException(status_code=500, detail="API Key da OpenAI não configurada no Backend.")
+        raise HTTPException(status_code=500, detail="API Key OpenAI ausente.")
 
     try:
-        # Usa o modelo barato e rápido que configuramos
         response = client.chat.completions.create(
-            model="gpt-4o-mini", 
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Você é o Mestre da Aura. Responda curto e motivador."},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": request.comando}
             ],
-            max_tokens=300
+            temperature=0.7,
+            max_tokens=1000
         )
-        texto_ia = response.choices[0].message.content
-        return {"resposta": texto_ia, "refresh_data": False}
+        
+        conteudo_ia = response.choices[0].message.content.strip()
+        
+        # Tenta detectar se a IA mandou um JSON (Comando) ou Texto (Conversa)
+        if conteudo_ia.startswith("{") and conteudo_ia.endswith("}"):
+            try:
+                comando_json = json.loads(conteudo_ia)
+                
+                # --- AÇÃO: CRIAR TREINO ---
+                if comando_json.get("tipo") == "CRIAR_TREINO":
+                    DB_TREINO = comando_json["dados"] # Salva no "Banco"
+                    logger.info("🏋️ Novo treino salvo no sistema!")
+                    return {
+                        "resposta": f"Entendido. Criei seu novo treino '{DB_TREINO['titulo']}'. Acesse a aba TREINO para ver os detalhes.",
+                        "refresh_data": True
+                    }
+
+                # --- AÇÃO: CRIAR DIETA ---
+                elif comando_json.get("tipo") == "CRIAR_DIETA":
+                    DB_DIETA = comando_json["dados"] # Salva no "Banco"
+                    logger.info("🍎 Nova dieta salva no sistema!")
+                    return {
+                        "resposta": f"Feito. Protocolo nutricional '{DB_DIETA['titulo']}' gerado. Acesse a aba DIETA para seguir o plano.",
+                        "refresh_data": True
+                    }
+            except json.JSONDecodeError:
+                # Se falhar o parse, trata como texto normal
+                logger.warning("Falha ao parsear JSON da IA. Retornando como texto.")
+        
+        # Se não for JSON, é conversa normal
+        return {"resposta": conteudo_ia, "refresh_data": False}
 
     except Exception as e:
         logger.error(f"❌ Erro OpenAI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"resposta": "O Mestre está meditando (Erro interno). Tente novamente.", "refresh_data": False}
 
-# --- 2. ROTAS DE DADOS (Para a Home e Perfil funcionarem) ---
+# --- ROTAS PARA O FRONTEND LER OS DADOS ---
 
+@app.get("/api/treino")
+def get_treino_atual():
+    # O Frontend vai chamar essa rota na tela 'treino_view'
+    return DB_TREINO
+
+@app.get("/api/dieta")
+def get_dieta_atual():
+    # O Frontend vai chamar essa rota na tela 'dieta_view'
+    return DB_DIETA
+
+# --- MOCKS DE DADOS GERAIS ---
 @app.get("/api/missoes")
 def get_missoes():
-    # Retorna missões reais ou padrão para destravar a Home
-    return {
-        "missoes": [
-            {"id": 1, "descricao": "Treino de Força", "xp": 100, "concluida": False},
-            {"id": 2, "descricao": "Beber 3L de Água", "xp": 50, "concluida": True},
-            {"id": 3, "descricao": "Meditação 5min", "xp": 75, "concluida": False}
-        ]
-    }
+    return {"missoes": [{"id": 1, "descricao": "Treino de Força", "xp": 100, "concluida": False}]}
 
 @app.get("/api/usuario/status")
 def get_status():
-    return {
-        "nivel": 5,
-        "xp_total": 2450,
-        "xp_por_nivel": 3000,
-        "saldo_coins": 120,
-        "saldo_cristais": 15
-    }
+    return {"nivel": 5, "xp_total": 2450, "xp_por_nivel": 3000, "saldo_coins": 120, "saldo_cristais": 15}
 
 @app.get("/api/status_fisiologico")
 def get_fisio():
@@ -125,11 +206,8 @@ def get_fisio():
 def get_equilibrio():
     return {"score": 88, "estado": "Equilibrado", "componentes": {"corpo": 90, "mente": 85}}
 
-# ==============================================================
-# 🚀 ENTRY POINT
-# ==============================================================
+# ENTRY POINT
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.environ.get("PORT", 10000)) # Porta padrão do Render
-    logger.info(f"🔱 INICIANDO SERVIDOR NA PORTA {port}")
+    port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
