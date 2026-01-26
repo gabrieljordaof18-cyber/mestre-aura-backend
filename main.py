@@ -3,12 +3,14 @@ import logging
 import json
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient # Motor do MongoDB
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Carrega ambiente
@@ -22,51 +24,54 @@ logging.basicConfig(
 )
 logger = logging.getLogger("AURA_MAIN")
 
-# Configuração OpenAI
-api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
+# Configurações de API
+MONGO_URI = os.getenv("MONGO_URI")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client_openai = OpenAI(api_key=OPENAI_API_KEY)
+mongo_client = None
+db = None
 
 # ==============================================================
-# 💾 BANCO DE DADOS EM MEMÓRIA (MOCK PARA MVP)
-# Aqui é onde os treinos e dietas criados pela IA ficarão salvos
-# temporariamente para que as telas 'treino_view' e 'dieta_view' possam ler.
+# 🔄 SCHEDULER (Tarefas Agendadas)
 # ==============================================================
-DB_TREINO = {
-    "titulo": "Treino Full Body (Iniciante)",
-    "descricao": "Treino padrão do sistema para adaptação.",
-    "exercicios": [
-        {"nome": "Agachamento Livre", "series": "3", "reps": "12"},
-        {"nome": "Flexão de Braço", "series": "3", "reps": "10"},
-        {"nome": "Puxada Alta", "series": "3", "reps": "12"}
-    ]
-}
-
-DB_DIETA = {
-    "titulo": "Dieta Equilibrada (Padrão)",
-    "calorias": 2200,
-    "refeicoes": [
-        {"nome": "Café da Manhã", "alimentos": "Ovos mexidos, Pão integral, Café"},
-        {"nome": "Almoço", "alimentos": "Frango grelhado, Arroz, Feijão, Salada"},
-        {"nome": "Jantar", "alimentos": "Peixe, Legumes cozidos"}
-    ]
-}
-
-# --- SCHEDULER ---
 def job_rotina_diaria_global():
     logger.info("🕛 [SCHEDULER] Executando rotina diária...")
+    # Futuro: Resetar missões diárias no MongoDB aqui
 
 scheduler = BackgroundScheduler()
 
+# ==============================================================
+# 🔌 CICLO DE VIDA (Conexão com Banco)
+# ==============================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 1. Iniciar Banco de Dados
+    global mongo_client, db
+    if not MONGO_URI:
+        logger.error("❌ MONGO_URI não encontrada nas variáveis de ambiente! O App não salvará dados.")
+    else:
+        try:
+            mongo_client = AsyncIOMotorClient(MONGO_URI)
+            db = mongo_client.get_database("aura_db") # Nome do seu banco
+            logger.info("✅ Conectado ao MongoDB Atlas com sucesso!")
+        except Exception as e:
+            logger.error(f"❌ Erro ao conectar no MongoDB: {e}")
+
+    # 2. Iniciar Scheduler
     scheduler.add_job(job_rotina_diaria_global, 'cron', hour=0, minute=0)
     scheduler.start()
-    logger.info("⏰ [SISTEMA] Scheduler iniciado.")
+    
     yield
+    
+    # 3. Fechar conexões ao desligar
+    if mongo_client:
+        mongo_client.close()
     scheduler.shutdown()
 
 app = FastAPI(lifespan=lifespan)
 
+# CORS (Permite conexão do App)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -75,65 +80,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==============================================================
+# 📦 MODELOS DE DADOS (Pydantic)
+# ==============================================================
 class ComandoRequest(BaseModel):
     comando: str
 
+class ChatMessage(BaseModel):
+    cla_id: str
+    user_id: str
+    user_name: str
+    message: str
+    created_at: Optional[str] = None
+
 # ==============================================================
-# 🧠 PROMPT DO SISTEMA (A MÁGICA ACONTECE AQUI)
+# 🧠 PROMPT DO SISTEMA
 # ==============================================================
 SYSTEM_PROMPT = """
 Você é o Mestre da Aura, um treinador de elite e biohacker.
 Sua missão é conversar com o usuário OU executar comandos de criação.
 
 IMPORTANTE:
-1. Se o usuário pedir para CRIAR UM TREINO, não responda texto. Retorne APENAS um JSON estrito neste formato:
-{
-  "tipo": "CRIAR_TREINO",
-  "dados": {
-      "titulo": "Nome do Treino",
-      "descricao": "Breve descrição",
-      "exercicios": [
-          {"nome": "Exercicio", "series": "3", "reps": "12"}
-      ]
-  }
-}
+1. Se o usuário pedir para CRIAR UM TREINO, não responda texto. Retorne APENAS um JSON estrito:
+{"tipo": "CRIAR_TREINO", "dados": {"titulo": "...", "descricao": "...", "exercicios": [{"nome": "...", "series": "3", "reps": "12"}]}}
 
-2. Se o usuário pedir para CRIAR UMA DIETA, não responda texto. Retorne APENAS um JSON estrito neste formato:
-{
-  "tipo": "CRIAR_DIETA",
-  "dados": {
-      "titulo": "Nome da Dieta",
-      "calorias": 2500,
-      "refeicoes": [
-          {"nome": "Café", "alimentos": "Item 1, Item 2"},
-          {"nome": "Almoço", "alimentos": "Item 1, Item 2"}
-      ]
-  }
-}
+2. Se o usuário pedir para CRIAR UMA DIETA, não responda texto. Retorne APENAS um JSON estrito:
+{"tipo": "CRIAR_DIETA", "dados": {"titulo": "...", "calorias": 2500, "refeicoes": [{"nome": "...", "alimentos": "..."}]}}
 
-3. Se for apenas uma conversa, dúvida ou motivação, responda normalmente em TEXTO (sem JSON). Seja curto, estoico e motivador.
+3. Caso contrário, responda curto e motivador em texto puro.
 """
 
 # ==============================================================
-# 🛣️ ROTAS
+# 🛣️ ROTAS DA API
 # ==============================================================
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "mensagem": "AURA API Operante 🔱"}
+    status_db = "Online 🟢" if db is not None else "Offline 🔴"
+    return {"status": "online", "banco_dados": status_db, "mensagem": "AURA API v2.0 (Mongo Edition)"}
 
-# --- ROTA INTELIGENTE DO CHAT ---
+# --- 1. ROTA INTELIGENTE DO CHAT (Mestre da Aura) ---
 @app.post("/api/comando")
 async def processar_comando(request: ComandoRequest):
     logger.info(f"📩 Comando recebido: {request.comando}")
-    global DB_TREINO, DB_DIETA # Acessa o banco em memória
     
-    if not api_key:
+    if not OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="API Key OpenAI ausente.")
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = client_openai.chat.completions.create(
+            model="gpt-4o", 
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": request.comando}
@@ -144,52 +140,105 @@ async def processar_comando(request: ComandoRequest):
         
         conteudo_ia = response.choices[0].message.content.strip()
         
-        # Tenta detectar se a IA mandou um JSON (Comando) ou Texto (Conversa)
+        # Detecta se é JSON (Comando de Criação)
         if conteudo_ia.startswith("{") and conteudo_ia.endswith("}"):
             try:
                 comando_json = json.loads(conteudo_ia)
                 
-                # --- AÇÃO: CRIAR TREINO ---
-                if comando_json.get("tipo") == "CRIAR_TREINO":
-                    DB_TREINO = comando_json["dados"] # Salva no "Banco"
-                    logger.info("🏋️ Novo treino salvo no sistema!")
-                    return {
-                        "resposta": f"Entendido. Criei seu novo treino '{DB_TREINO['titulo']}'. Acesse a aba TREINO para ver os detalhes.",
-                        "refresh_data": True
-                    }
+                # Salva TREINO no MongoDB
+                if comando_json.get("tipo") == "CRIAR_TREINO" and db is not None:
+                    await db.treinos.update_one(
+                        {"tipo": "ativo"}, # Sobrescreve o treino 'ativo'
+                        {"$set": comando_json["dados"]},
+                        upsert=True
+                    )
+                    return {"resposta": f"Criei seu treino '{comando_json['dados']['titulo']}'. Acesse a aba TREINO.", "refresh_data": True}
 
-                # --- AÇÃO: CRIAR DIETA ---
-                elif comando_json.get("tipo") == "CRIAR_DIETA":
-                    DB_DIETA = comando_json["dados"] # Salva no "Banco"
-                    logger.info("🍎 Nova dieta salva no sistema!")
-                    return {
-                        "resposta": f"Feito. Protocolo nutricional '{DB_DIETA['titulo']}' gerado. Acesse a aba DIETA para seguir o plano.",
-                        "refresh_data": True
-                    }
+                # Salva DIETA no MongoDB
+                elif comando_json.get("tipo") == "CRIAR_DIETA" and db is not None:
+                    await db.dietas.update_one(
+                        {"tipo": "ativo"},
+                        {"$set": comando_json["dados"]},
+                        upsert=True
+                    )
+                    return {"resposta": f"Dieta '{comando_json['dados']['titulo']}' gerada. Acesse a aba DIETA.", "refresh_data": True}
+            
             except json.JSONDecodeError:
-                # Se falhar o parse, trata como texto normal
-                logger.warning("Falha ao parsear JSON da IA. Retornando como texto.")
+                pass 
         
-        # Se não for JSON, é conversa normal
+        # Se não for comando, retorna texto normal
         return {"resposta": conteudo_ia, "refresh_data": False}
 
     except Exception as e:
-        logger.error(f"❌ Erro OpenAI: {e}")
-        return {"resposta": "O Mestre está meditando (Erro interno). Tente novamente.", "refresh_data": False}
+        logger.error(f"❌ Erro: {e}")
+        return {"resposta": "Erro interno no servidor.", "refresh_data": False}
 
-# --- ROTAS PARA O FRONTEND LER OS DADOS ---
+# --- 2. ROTAS DE DADOS (Lendo do MongoDB) ---
 
 @app.get("/api/treino")
-def get_treino_atual():
-    # O Frontend vai chamar essa rota na tela 'treino_view'
-    return DB_TREINO
+async def get_treino_atual():
+    if db is None: return {}
+    treino = await db.treinos.find_one({"tipo": "ativo"}, {"_id": 0})
+    return treino or {}
 
 @app.get("/api/dieta")
-def get_dieta_atual():
-    # O Frontend vai chamar essa rota na tela 'dieta_view'
-    return DB_DIETA
+async def get_dieta_atual():
+    if db is None: return {}
+    dieta = await db.dietas.find_one({"tipo": "ativo"}, {"_id": 0})
+    return dieta or {}
 
-# --- MOCKS DE DADOS GERAIS ---
+# --- 3. ROTAS DO CLÃ (COM LIMITE DE 100 MENSAGENS) ---
+
+@app.get("/api/cla/{cla_id}/chat")
+async def get_chat_history(cla_id: str):
+    """Busca as últimas 100 mensagens do clã no MongoDB"""
+    if db is None: return []
+    
+    # Busca ordenado por data (crescente)
+    cursor = db.chat_messages.find({"cla_id": cla_id}).sort("created_at", 1).limit(100)
+    messages = await cursor.to_list(length=100)
+    
+    # Formata ID para string
+    for msg in messages:
+        msg["id"] = str(msg["_id"])
+        del msg["_id"]
+        
+    return messages
+
+@app.post("/api/cla/chat")
+async def save_chat_message(msg: ChatMessage):
+    """
+    Salva mensagem e mantém apenas as últimas 100.
+    Lógica FIFO (First In, First Out).
+    """
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados desconectado")
+    
+    nova_msg = msg.dict()
+    if not nova_msg.get("created_at"):
+        nova_msg["created_at"] = datetime.utcnow().isoformat()
+        
+    # 1. Insere a nova mensagem
+    result = await db.chat_messages.insert_one(nova_msg)
+    
+    # 2. Verifica a contagem total de mensagens deste clã
+    total_msgs = await db.chat_messages.count_documents({"cla_id": msg.cla_id})
+    
+    # 3. Lógica de Limpeza (Se passar de 100)
+    if total_msgs > 100:
+        qtd_para_remover = total_msgs - 100
+        
+        # Encontra as mensagens mais antigas (ordenadas por data crescente)
+        cursor_antigas = db.chat_messages.find({"cla_id": msg.cla_id}).sort("created_at", 1).limit(qtd_para_remover)
+        
+        # Remove uma por uma (seguro) ou delete_many (se tiver logica de ID)
+        async for msg_antiga in cursor_antigas:
+            await db.chat_messages.delete_one({"_id": msg_antiga["_id"]})
+            logger.info(f"🧹 Limpeza Automática: Mensagem antiga {msg_antiga['_id']} removida do Clã {msg.cla_id}")
+
+    return {"status": "ok", "id": str(result.inserted_id)}
+
+# --- MOCKS (Mantidos para compatibilidade visual) ---
 @app.get("/api/missoes")
 def get_missoes():
     return {"missoes": [{"id": 1, "descricao": "Treino de Força", "xp": 100, "concluida": False}]}
