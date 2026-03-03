@@ -17,32 +17,31 @@ def rotina_diaria_sistema():
     Ex: Resetar missões diárias, limpar caches antigos.
     """
     logger.info(f"🕛 [SCHEDULER] Iniciando rotina de manutenção: {datetime.now()}")
-    # Aqui chamaremos funções do logic_gamificacao no futuro
+    # No futuro, aqui chamaremos o reset_missoes() do logic_gamificacao
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(rotina_diaria_sistema, 'cron', hour=0, minute=0)
 
 # ======================================================
-# 🚀 PONTO DE ENTRADA DO SERVIDOR
+# 🚀 PONTO DE ENTRADA DO SERVIDOR (AURA OS)
 # ======================================================
 
 if __name__ == '__main__':
-    # Inicia o agendador antes de ligar o servidor
+    # 1. Inicia o agendador de missões e manutenção
     if not scheduler.running:
         scheduler.start()
         logger.info("✅ Agendador de tarefas Aura OS ativado.")
 
-    # Porta definida pelo Render ou 5050 para o seu MacBook
+    # 2. Define a Porta (Prioridade para o Render, fallback para 5050 local)
     port = int(os.environ.get("PORT", 5050))
     
-    logger.info(f"🔥 Aura OS está ONLINE na porta {port}")
-    
-    # Rodamos o app importado do arquivo app.py
-    import uvicorn
-    # Usamos o adaptador para Flask rodar via comando de servidor moderno
-    from waitress import serve
-    
-    if os.environ.get("FLASK_ENV") == "production":
+    # 3. Identifica o Ambiente e Lança o Motor Correto
+    # Se houver uma PORT definida pelo sistema, estamos no Render
+    if os.environ.get("PORT"):
+        from waitress import serve
+        logger.info(f"🚀 MODO PRODUÇÃO: Aura OS operando via Waitress na porta {port}")
         serve(app, host='0.0.0.0', port=port)
     else:
+        # Modo de desenvolvimento no seu MacBook
+        logger.info(f"🛠️ MODO DEV: Aura OS operando via Flask na porta {port}")
         app.run(host='0.0.0.0', port=port, debug=True)
