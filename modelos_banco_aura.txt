@@ -1,0 +1,128 @@
+# ==============================================================
+# 📘 DICIONÁRIO E MODELAGEM DE DADOS (AURA PERFORMANCE)
+# Este arquivo contém a estrutura de documentos do MongoDB.
+# ==============================================================
+
+# --------------------------------------------------------------
+# 1. SCHEMA DE USUÁRIO (Coleção: 'users')
+# Fonte: schema.py -> obter_schema_padrao_usuario()
+# --------------------------------------------------------------
+{
+    "email": "string",
+    "auth_provider": "email/strava",
+    "created_at": "datetime_string",
+    "updated_at": "datetime_string",
+    "profile_picture_url": "string/null",
+    "plano": "free/plus/pro",
+    "cla_atual_id": "string/null",
+    
+    "jogador": {
+        "nome": "string",
+        "nivel": "int",
+        "experiencia": "int (XP)",
+        "saldo_coins": "int (Aura Coins)",
+        "saldo_cristais": "int (Premium)",
+        "avatar_frame_id": "string",
+        "titulo_atual": "string",
+        "missoes_concluidas": "int",
+        "metas": {
+            "peso_alvo": "float",
+            "objetivo": "hipertrofia/resistencia/saude",
+            "frequencia_treino": "string"
+        },
+        "preferencias": {
+            "horario_treino": "string",
+            "notificacoes": "boolean"
+        }
+    },
+
+    "dados_fisiologicos": {
+        "ultima_sincronizacao": "string",
+        "frequencia_cardiaca": {"valor": "int", "repouso": "int"},
+        "hrv": {"valor": "int", "status": "string"},
+        "sono": {"horas": "float", "qualidade": "string"},
+        "energia": {"nivel": "int (0-100)", "status": "string"},
+        "passos_hoje": "int",
+        "calorias_hoje": "int"
+    },
+
+    "afinidade_ia": {
+        "score": "int (0-100)",
+        "nivel": "hostil/neutro/aliado/devoto",
+        "humor_atual": "string",
+        "ultima_interacao": "string"
+    },
+
+    "homeostase": {
+        "score": "int",
+        "estado": "string",
+        "componentes": {"corpo": "int", "mente": "int", "energia": "int"},
+        "ultima_analise": "string"
+    },
+
+    "gamificacao": {
+        "xp_acumulado_hoje": "int",
+        "missoes_ativas": "list[objetos_missao]",
+        "missoes_concluidas_hoje": "list[ids]",
+        "ultima_geracao_missoes": "string"
+    },
+
+    "integracoes": {
+        "strava": {
+            "conectado": "boolean",
+            "atleta_id": "string/null",
+            "tokens": {"access_token": "str", "refresh_token": "str", "expires_at": "int"}
+        },
+        "apple_health": {"conectado": "boolean"},
+        "garmin": {"conectado": "boolean"}
+    },
+    
+    "configuracoes_sistema": {
+        "onboarding_completo": "boolean",
+        "versao_schema": "2.0"
+    }
+}
+
+# --------------------------------------------------------------
+# 2. SCHEMA GLOBAL E ANALYTICS (Coleção: 'configs' | ID: 'global_state')
+# Fonte: data_global.py / schema.py -> obter_schema_padrao_global()
+# --------------------------------------------------------------
+{
+    "_id": "global_state",
+    "sistema": {
+        "versao_api": "2.0.1",
+        "status": "online",
+        "manutencao": "boolean"
+    },
+    "analytics": {
+        "total_usuarios": "int",
+        "treinos_processados": "int",
+        "mensagens_trocadas": "int"
+    },
+    "ranking_global_cache": {
+        "top_100": "list",
+        "ultima_atualizacao": "string"
+    },
+    "ultima_atualizacao": "datetime_string"
+}
+
+# --------------------------------------------------------------
+# 3. BANCO DE MISSÕES (EXEMPLOS DISPONÍVEIS)
+# Fonte: banco_de_missoes.json
+# --------------------------------------------------------------
+# Categorias: saude, descanso, treino, mente.
+# Tipos de Verificação: manual, sensor_sono, sensor_cardio, passos, sensor_gps.
+[
+    {"id": "habito_01", "descricao": "Beber 2L de água", "xp": 50, "categoria": "saude", "tipo_verificacao": "manual"},
+    {"id": "habito_02", "descricao": "Dormir 8h completas", "xp": 100, "categoria": "descanso", "tipo_verificacao": "sensor_sono"},
+    {"id": "treino_01", "descricao": "Treino intenso (FC > 120bpm)", "xp": 150, "categoria": "treino", "tipo_verificacao": "sensor_cardio"},
+    {"id": "treino_04", "descricao": "Corrida de 5km", "xp": 200, "categoria": "treino", "tipo_verificacao": "sensor_gps"}
+]
+
+# --------------------------------------------------------------
+# 4. LÓGICA DE PERSISTÊNCIA (DATA USER)
+# Fonte: data_user.py
+# --------------------------------------------------------------
+# - carregar_memoria(user_id): Puxa do Mongo e converte _id para string.
+# - salvar_memoria(user_id, dados): Remove o _id do dicionário antes de dar o update_one no MongoDB.
+# - redefinir_metas_usuario(user_id): Aplica o schema padrão apenas nas chaves 'metas' e 'preferencias'.

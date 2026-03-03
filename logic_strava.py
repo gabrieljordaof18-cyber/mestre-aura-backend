@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 # Importações da Nova Arquitetura
-from data_manager import mongo_db, salvar_atividade_strava
+from data_manager import mongo_db
 from logic_gamificacao import aplicar_xp
 
 # Configuração de Logs
@@ -13,13 +13,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AURA_LOGIC_STRAVA")
 
 # =========================================================
-# ⚙️ CONFIGURAÇÕES & REGRAS DE GAMIFICAÇÃO
+# ⚙️ REGRAS DE GAMIFICAÇÃO (BALANCEAMENTO)
 # =========================================================
 XP_POR_KM = 10
 XP_BONUS_MADRUGADA = 50
 XP_POR_METRO_ELEVACAO = 2
 XP_BONUS_FLASH = 30
-VELOCIDADE_FLASH_MS = 2.78  # ~10km/h (Ritmo forte para iniciantes)
+VELOCIDADE_FLASH_MS = 2.78  # ~10km/h
 TAXA_CONVERSAO_COINS = 20   # 20 XP = 1 Aura Coin
 
 # =========================================================
@@ -28,202 +28,153 @@ TAXA_CONVERSAO_COINS = 20   # 20 XP = 1 Aura Coin
 
 def processar_evento_webhook(dados_evento: dict) -> bool:
     """
-    Orquestrador principal.
-    Recebe o webhook, valida, verifica duplicidade, calcula XP e salva.
+    Orquestrador de treinos. Valida, calcula XP e atualiza o Jogador.
     """
-    logger.info(f"🔄 Recebendo evento Strava: {dados_evento.get('object_id')}")
+    logger.info(f"🔄 Processando evento Strava ID: {dados_evento.get('object_id')}")
 
-    # 1. FILTRO DE SEGURANÇA E TIPO
-    # Só queremos atividades novas (create)
+    # 1. FILTRO DE SEGURANÇA (Apenas novas atividades)
     if dados_evento.get('object_type') != 'activity' or dados_evento.get('aspect_type') != 'create':
         return False
 
-    strava_id_atleta = dados_evento.get('owner_id')
+    strava_id_atleta = str(dados_evento.get('owner_id'))
     atividade_id = dados_evento.get('object_id')
 
     if mongo_db is None:
-        logger.error("❌ Banco de dados desconectado.")
+        logger.error("❌ Erro: Banco de dados offline.")
         return False
 
-    # 2. PROTEÇÃO CONTRA SPAM (IDEMPOTÊNCIA)
-    # Verifica se essa atividade já foi processada antes
-    ja_processado = mongo_db["activities"].find_one({"id": atividade_id})
-    if ja_processado:
-        logger.warning(f"⚠️ Atividade {atividade_id} já processada. Ignorando duplicidade.")
+    # 2. PROTEÇÃO CONTRA DUPLICIDADE (Idempotência)
+    if mongo_db["activities"].find_one({"id": atividade_id}):
+        logger.warning(f"⚠️ Atividade {atividade_id} já processada anteriormente.")
         return True
 
-    # 3. IDENTIFICAR O JOGADOR NO NOSSO BANCO
-    # No novo Schema, o ID do Strava fica dentro de 'integracoes'
+    # 3. IDENTIFICAR JOGADOR (Schema 2.0)
     usuario = mongo_db["users"].find_one({"integracoes.strava.atleta_id": strava_id_atleta})
     
     if not usuario:
-        logger.warning(f"⚠️ Usuário com Strava ID {strava_id_atleta} não encontrado no sistema.")
+        logger.warning(f"⚠️ Atleta Strava {strava_id_atleta} não vinculado a nenhum usuário Aura.")
         return False
 
     user_id = str(usuario["_id"])
 
-    # 4. GARANTIR TOKEN VÁLIDO (REFRESH)
+    # 4. RENOVAÇÃO DE TOKEN (Segurança OAuth2)
     access_token = obter_token_valido(usuario)
-    if not access_token:
-        logger.error(f"❌ Falha crítica: Não foi possível renovar o token para user {user_id}.")
-        return False
+    if not access_token: return False
 
-    # 5. BUSCAR DETALHES DO TREINO NA API DO STRAVA
+    # 5. BUSCA DETALHES NA API DO STRAVA
     try:
-        headers = {'Authorization': f"Bearer {access_token}"}
         url = f"https://www.strava.com/api/v3/activities/{atividade_id}"
+        headers = {'Authorization': f"Bearer {access_token}"}
         response = requests.get(url, headers=headers, timeout=10)
         
         if response.status_code != 200:
-            logger.error(f"❌ Erro Strava API ({response.status_code}): {response.text}")
+            logger.error(f"❌ Erro Strava API: {response.text}")
             return False
             
         dados_treino = response.json()
     except Exception as e:
-        logger.error(f"❌ Erro de conexão com Strava: {e}")
+        logger.error(f"❌ Falha na conexão Strava: {e}")
         return False
 
-    # 6. 🧙‍♂️ A MÁGICA: CALCULAR XP E MOEDAS
+    # 6. CÁLCULO DE RECOMPENSAS (XP e Aura Coins)
     xp_total, lista_bonus = calcular_xp_avancado(dados_treino)
+    coins_ganhas = max(1, int(xp_total / TAXA_CONVERSAO_COINS)) if xp_total > 0 else 0
 
-    # Regra Econômica
-    coins_ganhas = int(xp_total / TAXA_CONVERSAO_COINS)
-    if xp_total > 0 and coins_ganhas < 1: coins_ganhas = 1
-
-    logger.info(f"💰 SUCESSO! User {user_id} -> XP: {xp_total} | Coins: {coins_ganhas}")
-
-    # 7. PERSISTÊNCIA E APLICAÇÃO DE GANHOS
+    # 7. PERSISTÊNCIA E ATUALIZAÇÃO DO JOGADOR
     try:
-        # A. Salvar Atividade Bruta (Para histórico detalhado)
+        # A. Salvar no Histórico (Coleção 'activities')
+        dados_treino["user_id"] = user_id
         dados_treino["aura_analysis"] = {
             "xp_ganho": xp_total,
             "coins_ganhas": coins_ganhas,
             "bonus": lista_bonus,
-            "processed_at": datetime.now()
+            "processed_at": datetime.now().isoformat()
         }
-        salvar_atividade_strava(user_id, dados_treino)
+        mongo_db["activities"].insert_one(dados_treino)
 
-        # B. Aplicar XP e Nível (Usando a lógica centralizada de gamificação)
+        # B. Aplicar XP e Nível (Lógica logic_gamificacao.py)
         resultado_xp = aplicar_xp(user_id, xp_total)
         
-        # C. Adicionar Coins e Atualizar Saldo (Manual, pois aplicar_xp cuida só de XP/Cristais)
+        # C. Atualizar Saldo de Aura Coins (Schema: jogador.saldo_coins)
         mongo_db["users"].update_one(
             {"_id": usuario["_id"]},
             {
-                "$inc": {"jogador.saldo_coins": coins_ganhas}
+                "$inc": {"jogador.saldo_coins": coins_ganhas},
+                "$set": {"updated_at": datetime.now().isoformat()}
             }
         )
         
-        # Log de sucesso
-        if resultado_xp.get("subiu"):
-            logger.info(f"🆙 USUÁRIO SUBIU DE NÍVEL COM O TREINO! Nível {resultado_xp['novo_nivel']}")
-
+        logger.info(f"✅ Treino Concluído! User: {user_id} | +{xp_total} XP | +{coins_ganhas} Coins")
         return True
+
     except Exception as e:
-        logger.error(f"❌ Erro ao salvar dados pós-treino: {e}")
+        logger.error(f"❌ Erro ao finalizar processamento de treino: {e}")
         return False
 
 def obter_token_valido(usuario: dict) -> str:
-    """
-    Gerencia a renovação do token OAuth2 olhando para o Schema correto.
-    """
-    # Acesso seguro ao dicionário aninhado
+    """Renova o access_token caso esteja expirado."""
     integracao = usuario.get('integracoes', {}).get('strava', {})
     tokens = integracao.get('tokens', {})
     
-    access_token = tokens.get('access_token')
-    expires_at = tokens.get('expires_at')
-    refresh_token = tokens.get('refresh_token')
-    
-    # Margem de segurança de 5 minutos
-    agora = time.time()
-    
-    if expires_at and agora < (expires_at - 300):
-        return access_token
+    if tokens.get('expires_at', 0) > (time.time() + 300):
+        return tokens.get('access_token')
         
-    logger.info("⏳ Token Strava expirado. Solicitando renovação...")
-    
-    url_token = "https://www.strava.com/oauth/token"
-    payload = {
-        'client_id': os.getenv('STRAVA_CLIENT_ID'),
-        'client_secret': os.getenv('STRAVA_CLIENT_SECRET'),
-        'grant_type': 'refresh_token',
-        'refresh_token': refresh_token
-    }
+    logger.info(f"⏳ Renovando token Strava para o usuário {usuario.get('email')}")
     
     try:
-        res = requests.post(url_token, data=payload, timeout=10)
+        payload = {
+            'client_id': os.getenv('STRAVA_CLIENT_ID'),
+            'client_secret': os.getenv('STRAVA_CLIENT_SECRET'),
+            'grant_type': 'refresh_token',
+            'refresh_token': tokens.get('refresh_token')
+        }
+        res = requests.post("https://www.strava.com/oauth/token", data=payload, timeout=10)
         
         if res.status_code == 200:
-            novos_dados = res.json()
-            
-            # Atualiza no Banco (Caminho aninhado correto)
+            novos = res.json()
             mongo_db["users"].update_one(
                 {"_id": usuario["_id"]},
                 {"$set": {
-                    "integracoes.strava.tokens.access_token": novos_dados.get('access_token'),
-                    "integracoes.strava.tokens.refresh_token": novos_dados.get('refresh_token'),
-                    "integracoes.strava.tokens.expires_at": novos_dados.get('expires_at')
+                    "integracoes.strava.tokens.access_token": novos.get('access_token'),
+                    "integracoes.strava.tokens.refresh_token": novos.get('refresh_token'),
+                    "integracoes.strava.tokens.expires_at": novos.get('expires_at')
                 }}
             )
-            logger.info("✅ Token Strava renovado e salvo!")
-            return novos_dados.get('access_token')
-        else:
-            logger.error(f"❌ Erro renovação Strava: {res.text}")
-            return None
+            return novos.get('access_token')
     except Exception as e:
-        logger.error(f"❌ Erro de conexão na renovação: {e}")
-        return None
+        logger.error(f"❌ Falha crítica na renovação de token: {e}")
+    return None
 
 def calcular_xp_avancado(treino: dict) -> tuple:
-    """
-    Aplica as regras de gamificação. Retorna (xp_total, lista_de_motivos).
-    """
-    xp_acumulado = 0
+    """Calcula XP baseado em distância, elevação e velocidade."""
+    xp = 0
     motivos = []
 
-    # Extração segura de dados
-    distancia_m = treino.get('distance', 0.0)
-    elevacao_m = treino.get('total_elevation_gain', 0.0)
-    velocidade_media_ms = treino.get('average_speed', 0.0)
+    dist_km = treino.get('distance', 0) / 1000
+    elevacao = treino.get('total_elevation_gain', 0)
+    vel_ms = treino.get('average_speed', 0)
     
-    # Parsing de Data
-    data_local = treino.get('start_date_local', '')
-    hora_treino = 12
+    # Parsing de Hora para Bônus Madrugador
     try:
-        if data_local:
-            hora_treino = int(data_local.split('T')[1].split(':')[0])
-    except:
-        pass
+        hora = int(treino.get('start_date_local', 'T12').split('T')[1][:2])
+    except: hora = 12
 
-    # --- REGRAS ---
+    # Cálculo Base
+    if dist_km > 0.1:
+        ganho_dist = int(dist_km * XP_POR_KM)
+        xp += max(10, ganho_dist)
+        motivos.append(f"Distância ({dist_km:.1f}km)")
 
-    # 1. Distância
-    distancia_km = distancia_m / 1000
-    xp_distancia = int(distancia_km * XP_POR_KM)
-    
-    # XP Mínimo para qualquer atividade válida (>100m)
-    if xp_distancia < 10 and distancia_km > 0.1: 
-        xp_distancia = 10 
-    
-    if xp_distancia > 0:
-        xp_acumulado += xp_distancia
-        motivos.append(f"Distância ({distancia_km:.1f}km)")
-
-    # 2. Madrugador (04h - 08h)
-    if 4 <= hora_treino < 8:
-        xp_acumulado += XP_BONUS_MADRUGADA
+    if 4 <= hora < 8:
+        xp += XP_BONUS_MADRUGADA
         motivos.append("☀️ Bônus Madrugador")
 
-    # 3. Rei da Montanha
-    if elevacao_m > 50:
-        xp_subida = int(elevacao_m * XP_POR_METRO_ELEVACAO)
-        xp_acumulado += xp_subida
-        motivos.append(f"⛰️ Rei da Montanha (+{int(elevacao_m)}m)")
+    if elevacao > 50:
+        xp += int(elevacao * XP_POR_METRO_ELEVACAO)
+        motivos.append(f"⛰️ Elevação (+{int(elevacao)}m)")
 
-    # 4. The Flash (Velocidade)
-    if velocidade_media_ms > VELOCIDADE_FLASH_MS:
-        xp_acumulado += XP_BONUS_FLASH
+    if vel_ms > VELOCIDADE_FLASH_MS:
+        xp += XP_BONUS_FLASH
         motivos.append("⚡ Ritmo The Flash")
 
-    return xp_acumulado, motivos
+    return xp, motivos

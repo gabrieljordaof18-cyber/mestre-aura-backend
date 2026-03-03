@@ -3,13 +3,14 @@ from datetime import datetime
 from typing import Dict, Any
 
 # Importações da Nova Arquitetura
+# Certifique-se que data_manager.py exporta 'mongo_db'
 from data_manager import mongo_db
 from schema import obter_schema_padrao_global
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_DATA_GLOBAL")
 
-# Constantes do Banco
+# Constantes do Banco (Coleção dedicada a configurações do sistema)
 COLECAO_CONFIGS = "configs"
 ID_GLOBAL = "global_state"
 
@@ -20,9 +21,10 @@ ID_GLOBAL = "global_state"
 def carregar_memoria_global() -> Dict[str, Any]:
     """
     Busca o documento único de configuração global no MongoDB.
-    Se não existir, cria um novo padrão.
+    Se não existir, cria um novo baseado no Schema 2.0.
     """
     if mongo_db is None:
+        logger.error("❌ MongoDB não inicializado em data_global.")
         return obter_schema_padrao_global()
 
     try:
@@ -43,13 +45,15 @@ def carregar_memoria_global() -> Dict[str, Any]:
 
 def salvar_memoria_global(dados: Dict[str, Any]) -> bool:
     """
-    Atualiza o documento global.
+    Atualiza o documento global de forma segura.
     """
     if mongo_db is None: return False
     
     try:
-        dados["ultima_atualizacao"] = str(datetime.now())
-        # Proteção para não tentar alterar o _id imutável
+        # Usamos ISO format para padronizar datas no MongoDB
+        dados["ultima_atualizacao"] = datetime.now().isoformat()
+        
+        # Proteção: O _id do MongoDB é imutável, removemos antes do $set
         dados_salvar = dados.copy()
         if "_id" in dados_salvar:
             del dados_salvar["_id"]
@@ -65,32 +69,24 @@ def salvar_memoria_global(dados: Dict[str, Any]) -> bool:
         return False
 
 # ==============================================================
-# 📊 ANALYTICS & MONITORAMENTO (SEM DADOS SENSÍVEIS)
+# 📊 ANALYTICS & RANKING (ALTA PERFORMANCE)
 # ==============================================================
 
 def registrar_interacao_global(sentimento: str = "neutro") -> bool:
     """
-    Incrementa os contadores de uso do sistema.
-    NÃO SALVA MAIS O TEXTO DA MENSAGEM (Privacidade + Performance).
+    Incrementa os contadores de uso do sistema sem expor dados de usuários.
     """
     if mongo_db is None: return False
 
     try:
-        # Mapeamento para o campo correto no Schema
-        campo_stats = "neutras"
-        if sentimento == "positivo": campo_stats = "positivas"
-        elif sentimento == "negativo": campo_stats = "negativas"
-
-        # Operação Atômica ($inc) - Seguro para concorrência
+        # Incremento atômico: Essencial para o ambiente multijogador do Aura
         mongo_db[COLECAO_CONFIGS].update_one(
             {"_id": ID_GLOBAL},
             {
                 "$inc": {
-                    f"analytics.mensagens_trocadas": 1,
-                    # Se você quiser manter contagem por sentimento no futuro:
-                    # f"analytics.sentimentos.{campo_stats}": 1 
+                    "analytics.mensagens_trocadas": 1
                 },
-                "$set": {"ultima_atualizacao": str(datetime.now())}
+                "$set": {"ultima_atualizacao": datetime.now().isoformat()}
             }
         )
         return True
@@ -98,10 +94,9 @@ def registrar_interacao_global(sentimento: str = "neutro") -> bool:
         logger.error(f"⚠️ Erro ao registrar analytics: {e}")
         return False
 
-def atualizar_cache_ranking(lista_ranking: list):
+def atualizar_cache_ranking(lista_ranking: list) -> bool:
     """
-    Salva o Top 100 calculado no documento global para acesso rápido.
-    Evita ter que calcular o ranking toda vez que alguém abre o app.
+    Salva o Top 100 calculado para que o app carregue o Ranking instantaneamente.
     """
     if mongo_db is None: return False
     
@@ -111,11 +106,11 @@ def atualizar_cache_ranking(lista_ranking: list):
             {
                 "$set": {
                     "ranking_global_cache.top_100": lista_ranking,
-                    "ranking_global_cache.ultima_atualizacao": str(datetime.now())
+                    "ranking_global_cache.ultima_atualizacao": datetime.now().isoformat()
                 }
             }
         )
-        logger.info("🏆 Cache de Ranking Global atualizado.")
+        logger.info(f"🏆 Cache de Ranking Global atualizado com {len(lista_ranking)} jogadores.")
         return True
     except Exception as e:
         logger.error(f"❌ Erro ao atualizar cache ranking: {e}")

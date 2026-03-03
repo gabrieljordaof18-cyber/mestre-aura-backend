@@ -1,70 +1,25 @@
 {
-    "_system_updated_at": "2025-11-29 12:00:00.000000",
-    "jogador": {
-        "nome": "Gabriel",
-        "nivel": 1,
-        "experiencia": 0,
-        "saldo_coins": 25,
-        "metas": {
-            "objetivo": "hipertrofia",
-            "frequencia_treino": "6x",
-            "peso_alvo": 80
-        },
-        "preferencias": {
-            "horario_treino": "10h",
-            "sono_medio": "7h"
-        }
-    },
-    "gamificacao": {
-        "xp_total": 0,
-        "nivel": 1,
-        "xp_por_nivel": 1000,
-        "missoes_ativas": [],
-        "ultima_geracao_missoes": "2025-11-29 12:00:00"
-    },
-    "homeostase": {
-        "score": 85,
-        "estado": "Equilíbrio Bom ✅",
-        "componentes": {
-            "corpo": 80,
-            "mente": 90,
-            "energia": 85
-        }
-    },
-    "dados_fisiologicos": {
-        "frequencia_cardiaca": 65,
-        "variabilidade_hrv": 80,
-        "passos_diarios": 0,
-        "calorias_gastas": 0,
-        "ultima_sincronizacao": "2025-11-29 12:00:00",
-        "sono": {
-            "horas": 7.5,
-            "qualidade": "boa"
-        },
-        "treino": {
-            "intensidade": 0,
-            "tipo": "descanso",
-            "duracao_min": 0
-        },
-        "energia": {
-            "nivel": 90,
-            "status": "ótimo"
-        },
-        "hrv": {
-            "valor": 80,
-            "status": "bom"
-        }
-    },
-    "historico": [
-        {
-            "role": "system",
-            "content": "Sistema reiniciado. Memória limpa para otimização."
-        }
-    ],
-    "logs": [],
     "configuracoes_sistema": {
-        "versao_mestre_aura": "20.0",
-        "modo_treinamento": "ativo",
-        "auto_update_sensores": true
+        "versao_schema": "2.0",
+        "ambiente": "desenvolvimento",
+        "last_local_sync": "2026-03-03"
+    },
+    "template_usuario_novo": {
+        "jogador": {
+            "nome": "Atleta",
+            "nivel": 1,
+            "experiencia": 0,
+            "saldo_coins": 0,
+            "saldo_cristais": 0
+        },
+        "homeostase": {
+            "score": 50,
+            "estado": "Iniciando Análise...",
+            "componentes": {"corpo": 50, "mente": 50, "energia": 50}
+        },
+        "gamificacao": {
+            "missoes_ativas": [],
+            "ultima_geracao_missoes": ""
+        }
     }
 }

@@ -1,0 +1,687 @@
+# ===================================================
+# ARQUIVO 1: rotas_api.py (O HUB DE COMUNICAÇÃO)
+# Este arquivo gerencia todas as entradas do app (Base44) para o servidor.
+# ===================================================
+# Rotas principais incluem: 
+# - /pagamento/criar: Inicia cobranças via Asaas.
+# - /usuario/status: Dashboard de performance (XP, Nível, Aura Coins).
+# - /comando: Interface de chat com a inteligência do Aura.
+# - /sincronizar_dinamico: Força leitura de sensores e Strava.
+
+# import logging
+import os
+import requests # <--- A CORREÇÃO ESTÁ AQUI (Faltava essa linha)
+import jwt
+from functools import wraps
+from datetime import datetime
+from typing import Dict, Any
+from flask import request, jsonify, Blueprint
+
+# --- IMPORTAÇÕES DA NOVA ARQUITETURA ---
+from data_user import carregar_memoria, salvar_memoria, obter_status_fisiologico
+from data_manager import obter_ranking_global, ler_plano 
+from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
+from logic_equilibrio import calcular_e_atualizar_equilibrio
+from logic import processar_comando 
+from logic_feedback import gerar_feedback_emocional
+from logic_asaas import criar_cobranca # Agora com persistência
+
+# Configuração de Logs
+logger = logging.getLogger("AURA_API_ROTAS")
+
+api_bp = Blueprint('api_bp', __name__, url_prefix='/api')
+
+# ===================================================
+# 🔐 MIDDLEWARE DE AUTENTICAÇÃO (TOKEN/ID)
+# ===================================================
+
+def token_required(f):
+    """
+    Decorador que protege as rotas.
+    Espera um Header 'Authorization: Bearer <USER_ID_OU_TOKEN>'
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # 1. Tenta pegar do Header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1] # Remove "Bearer "
+            except IndexError:
+                return jsonify({"erro": "Token mal formatado"}), 401
+        
+        if not token:
+            return jsonify({"erro": "Token de autenticação ausente"}), 401
+
+        try:
+            # PARA O MVP: Aceitamos o próprio User ID como token temporário
+            # Futuro: Decodificar JWT aqui (jwt.decode(token, SECRET...))
+            current_user_id = token 
+            
+            # Se fosse JWT real:
+            # data = jwt.decode(token, os.getenv("JWT_SECRET"), algorithms=["HS256"])
+            # current_user_id = data['user_id']
+            
+        except Exception as e:
+            logger.error(f"Erro de auth: {e}")
+            return jsonify({"erro": "Token inválido ou expirado"}), 401
+
+        # Injeta o user_id na função da rota
+        return f(current_user_id, *args, **kwargs)
+
+    return decorated
+
+# ===================================================
+# 💳 PAGAMENTOS (ASAAS)
+# ===================================================
+
+@api_bp.route('/pagamento/criar', methods=['POST'])
+@token_required
+def criar_pagamento_asaas(current_user_id):
+    """
+    Cria cobrança e vincula ao usuário logado.
+    """
+    try:
+        dados = request.get_json(force=True)
+        if not dados:
+            return jsonify({"erro": "Payload vazio"}), 400
+            
+        # Injeta o ID do usuário para persistência
+        dados['user_id'] = current_user_id
+        
+        # Chama a lógica (agora segura e persistente)
+        resultado = criar_cobranca(dados)
+        
+        if "erro" in resultado:
+            return jsonify(resultado), 400
+            
+        return jsonify(resultado)
+
+    except Exception as e:
+        logger.error(f"Erro na rota de pagamento: {e}")
+        return jsonify({"erro": "Falha ao processar pagamento."}), 500
+
+@api_bp.route('/pagamento/pix/qrcode/<id_pagamento>', methods=['GET'])
+# Esta rota pode ser pública ou protegida, dependendo da UX. Deixaremos pública por enquanto.
+def recuperar_qrcode_pix(id_pagamento):
+    try:
+        from logic_asaas import ASAAS_URL, get_headers
+        headers = get_headers()
+        
+        url = f"{ASAAS_URL}/payments/{id_pagamento}/pixQrCode"
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            return jsonify({
+                "sucesso": True,
+                "payload_pix": data.get('payload'),
+                "imagem_qr": data.get('encodedImage')
+            })
+        else:
+            return jsonify({"erro": "QR Code não disponível ou expirado."}), 400
+    except Exception as e:
+        logger.error(f"Erro recuperação Pix: {e}")
+        return jsonify({"erro": "Erro interno"}), 500
+
+# ===================================================
+# 👤 USUÁRIO E STATUS
+# ===================================================
+
+@api_bp.route('/usuario/status', methods=['GET'])
+@token_required
+def get_status_jogador(current_user_id):
+    try:
+        dados = carregar_memoria(current_user_id)
+        
+        if not dados:
+            return jsonify({"erro": "Perfil não encontrado"}), 404
+            
+        jogador = dados.get("jogador", {})
+        integracoes = dados.get("integracoes", {})
+        
+        xp_atual = jogador.get("experiencia", 0)
+        nivel_atual = jogador.get("nivel", 1)
+        
+        # Lógica visual de barra de progresso (Presentation Logic)
+        XP_BASE = 1000
+        xp_prox = XP_BASE * nivel_atual
+        xp_anterior = XP_BASE * (nivel_atual - 1)
+        
+        # Evita divisão por zero no nível 1
+        range_nivel = xp_prox - xp_anterior
+        xp_no_nivel = xp_atual - xp_anterior
+        
+        progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
+        
+        # Simplificando retorno para o Frontend
+        return jsonify({
+            "nome": jogador.get("nome", "Atleta"),
+            "foto": dados.get("profile_picture_url", ""),
+            "xp_total": xp_atual,
+            "aura_coins": jogador.get("saldo_coins", 0),
+            "saldo_cristais": jogador.get("saldo_cristais", 0),
+            "nivel": nivel_atual,
+            "xp_necessario_proximo": range_nivel - xp_no_nivel,
+            "barra_progresso": progresso,
+            "strava_conectado": integracoes.get("strava", {}).get("conectado", False)
+        })
+    except Exception as e:
+        logger.error(f"Erro status usuário: {e}")
+        return jsonify({"erro": "Falha ao carregar perfil"}), 500
+
+@api_bp.route('/cla/ranking', methods=['GET'])
+def get_ranking_cla():
+    # Rota pública (pode ser vista sem login para atrair novos usuários)
+    try:
+        ranking = obter_ranking_global(limite=20) 
+        return jsonify({"ranking": ranking})
+    except Exception as e:
+        logger.error(f"Erro no ranking: {e}")
+        return jsonify({"ranking": []})
+
+@api_bp.route('/antifraude/validar', methods=['POST'])
+@token_required
+def validar_atividade(current_user_id):
+    """
+    Verifica se existe atividade no Strava na data informada.
+    """
+    try:
+        dados_input = request.get_json(force=True)
+        data_declarada = dados_input.get('data') 
+        
+        # Agora buscamos na coleção de atividades reais
+        from data_manager import mongo_db
+        if mongo_db is None: return jsonify({"erro": "Banco offline"}), 500
+
+        # Busca simples por data string (YYYY-MM-DD)
+        # Nota: Idealmente faríamos range de data, mas string match serve para MVP
+        existe = mongo_db["activities"].find_one({
+            "user_id": current_user_id,
+            "start_date_local": {"$regex": f"^{data_declarada}"}
+        })
+        
+        if existe: 
+            return jsonify({"aprovado": True, "msg": "Atividade Strava localizada!"})
+        else: 
+            return jsonify({"aprovado": False, "motivo": "Nenhum registro no Strava nesta data."})
+            
+    except Exception as e:
+        logger.error(f"Erro antifraude: {e}")
+        return jsonify({"aprovado": False, "motivo": "Erro técnico."}), 500
+
+# ===================================================
+# 🧠 CÉREBRO E GAMIFICAÇÃO
+# ===================================================
+
+@api_bp.route('/comando', methods=['POST'])
+@token_required
+def comando(current_user_id):
+    try:
+        dados = request.get_json(force=True) 
+        mensagem = dados.get('comando', '').strip()
+        
+        if not mensagem: return jsonify({"resposta": "..."})
+        
+        resposta = processar_comando(current_user_id, mensagem)
+        return jsonify({"resposta": resposta})
+    except Exception as e:
+        logger.error(f"Erro no chat: {e}")
+        return jsonify({"resposta": "⚠️ Erro de comunicação com o Mestre."})
+
+@api_bp.route('/missoes', methods=['GET'])
+@token_required
+def listar_missoes(current_user_id):
+    # Gera ou recupera missões do usuário específico
+    missoes = gerar_missoes_diarias(current_user_id)
+    return jsonify({"missoes": missoes})
+
+@api_bp.route('/missoes/gerar', methods=['POST'])
+@token_required
+def rota_gerar_missoes(current_user_id):
+    # Força regeneração (se a lógica permitir)
+    missoes = gerar_missoes_diarias(current_user_id)
+    return jsonify({"mensagem": "Missões sincronizadas.", "missoes": missoes})
+
+@api_bp.route('/concluir_missao', methods=['POST'])
+@token_required
+def concluir_missao(current_user_id):
+    try:
+        dados = request.get_json(force=True)
+        missao_id = dados.get("id")
+        
+        memoria = carregar_memoria(current_user_id)
+        missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
+        
+        missao_alvo = None
+        for m in missoes:
+            if m["id"] == missao_id:
+                if m.get("concluida"): return jsonify({"erro": "Já concluída!"}), 400
+                m["concluida"] = True
+                missao_alvo = m
+                break
+        
+        if missao_alvo:
+            xp = missao_alvo.get("xp", 0)
+            
+            # Aplica XP e salva
+            salvar_memoria(current_user_id, memoria)
+            resultado = aplicar_xp(current_user_id, xp)
+            
+            return jsonify({
+                "sucesso": True, 
+                "msg": f"Concluída! +{xp} XP", 
+                "novo_nivel": resultado["novo_nivel"],
+                "subiu_nivel": resultado["subiu"]
+            })
+            
+        return jsonify({"erro": "Missão não encontrada"}), 404
+    except Exception as e:
+        logger.error(f"Erro concluir missão: {e}")
+        return jsonify({"erro": "Falha interna"}), 500
+
+# ===================================================
+# ⚕️ SAÚDE E BIOHACKING
+# ===================================================
+
+@api_bp.route('/equilibrio', methods=['GET'])
+@token_required
+def obter_equilibrio(current_user_id):
+    # Calcula na hora ou recupera o último
+    memoria = carregar_memoria(current_user_id)
+    homeostase = memoria.get("homeostase", {"score": 0, "estado": "Calculando..."})
+    return jsonify(homeostase)
+
+@api_bp.route('/status_fisiologico', methods=['GET'])
+@token_required
+def status_fisiologico(current_user_id):
+    # Aqui poderíamos chamar obter_dados_fisiologicos(current_user_id) para forçar sync
+    # Mas para leitura rápida, pegamos do banco direto
+    memoria = carregar_memoria(current_user_id)
+    return jsonify(memoria.get("dados_fisiologicos", {}))
+
+@api_bp.route('/feedback', methods=['GET'])
+@token_required
+def feedback(current_user_id):
+    texto = gerar_feedback_emocional(current_user_id)
+    return jsonify({"texto": texto})
+
+@api_bp.route('/sincronizar_dinamico', methods=['POST'])
+@token_required
+def sincronizar_dinamico(current_user_id):
+    """
+    Rota chamada pelo botão 'Sincronizar' do app.
+    Força a ida ao Strava/Sensores.
+    """
+    from data_sensores import obter_dados_fisiologicos
+    
+    # 1. Busca dados novos nos sensores
+    novos_dados = obter_dados_fisiologicos(current_user_id)
+    
+    # 2. Recalcula equilíbrio com esses dados
+    calcular_e_atualizar_equilibrio(current_user_id)
+    
+    return jsonify({"dados": novos_dados})
+
+@api_bp.route('/usuario/planos', methods=['GET'])
+@token_required
+def get_plano_usuario(current_user_id):
+    try:
+        tipo = request.args.get('tipo') 
+        if tipo not in ['dieta', 'treino']: 
+            return jsonify({"erro": "Tipo inválido."}), 400
+        
+        dados_plano = ler_plano(current_user_id, tipo)
+        return jsonify({"tipo": tipo, "dados": dados_plano})
+    except Exception as e:
+        logger.error(f"Erro ao buscar plano: {e}")
+        return jsonify({"erro": "Falha ao carregar plano."}), 500
+
+# ===================================================
+# ARQUIVO 2: rotas_strava.py (CONEXÃO WEARABLES)
+# Gerencia o OAuth2 do Strava e o Webhook de atividades físicas.
+# ===================================================
+
+# import os
+import logging
+import requests
+from flask import Blueprint, request, jsonify, redirect
+
+# Importações de Lógica e Dados
+# Nota: Esses arquivos serão refatorados a seguir, mas a importação já fica correta.
+from data_manager import salvar_conexao_strava
+from logic_strava import processar_evento_webhook
+
+# Configuração de Logs
+logger = logging.getLogger("AURA_STRAVA")
+
+# Criação do Blueprint (Módulo de Rotas)
+strava_bp = Blueprint('strava_bp', __name__)
+
+# ===================================================
+# 🏃 ROTAS DE AUTENTICAÇÃO (LOGIN NO STRAVA)
+# ===================================================
+
+@strava_bp.route('/auth/strava/login', methods=['GET'])
+def strava_login():
+    """
+    Inicia o fluxo OAuth2. Redireciona o usuário para o site do Strava.
+    """
+    client_id = os.getenv('STRAVA_CLIENT_ID')
+    # Ajuste: No Render, a REDIRECT_URI deve ser a URL de produção. 
+    # Em local, pode ser http://localhost:5000/auth/strava/callback
+    redirect_uri = os.getenv('STRAVA_REDIRECT_URI', 'http://localhost:5000/auth/strava/callback')
+    
+    if not client_id:
+        return jsonify({"erro": "Configuração STRAVA_CLIENT_ID ausente"}), 500
+
+    strava_auth_url = (
+        f"https://www.strava.com/oauth/authorize?"
+        f"client_id={client_id}&"
+        f"response_type=code&"
+        f"redirect_uri={redirect_uri}&"
+        f"approval_prompt=auto&"
+        f"scope=activity:read_all,profile:read_all"
+    )
+    logger.info("🔄 Iniciando redirecionamento para login Strava...")
+    return redirect(strava_auth_url)
+
+@strava_bp.route('/auth/strava/callback', methods=['GET'])
+def strava_callback():
+    """
+    O Strava devolve o usuário para cá com um 'code'.
+    Trocamos esse code por um Token de Acesso permanente.
+    """
+    code = request.args.get('code')
+    erro = request.args.get('error')
+
+    if erro:
+        logger.error(f"❌ Erro retornado pelo Strava: {erro}")
+        return jsonify({"erro": "Acesso negado pelo usuário no Strava"}), 400
+    
+    if not code:
+        return jsonify({"erro": "Nenhum código recebido"}), 400
+
+    # Troca Code por Token
+    token_url = "https://www.strava.com/oauth/token"
+    payload = {
+        'client_id': os.getenv('STRAVA_CLIENT_ID'),
+        'client_secret': os.getenv('STRAVA_CLIENT_SECRET'),
+        'code': code,
+        'grant_type': 'authorization_code'
+    }
+    
+    try:
+        response = requests.post(token_url, data=payload)
+        dados = response.json()
+        
+        if response.status_code == 200:
+            # Dados do Atleta e Tokens
+            athlete_info = dados.get('athlete', {})
+            tokens = {
+                "access_token": dados.get('access_token'),
+                "refresh_token": dados.get('refresh_token'),
+                "expires_at": dados.get('expires_at')
+            }
+            
+            # Salva no MongoDB (via Data Manager)
+            sucesso = salvar_conexao_strava(athlete_info, tokens)
+            
+            if sucesso:
+                logger.info(f"✅ Usuário {athlete_info.get('firstname')} conectado com sucesso!")
+                # Página de Sucesso (Estilo Matrix/Dark)
+                return """
+                <html>
+                    <body style="background-color: #0f172a; color: #4ade80; font-family: 'Courier New', sans-serif; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0;">
+                        <div style="border: 2px solid #4ade80; padding: 40px; border-radius: 10px; max-width: 500px; margin: 0 auto; box-shadow: 0 0 20px rgba(74, 222, 128, 0.2);">
+                            <h1 style="font-size: 2.5rem; margin-bottom: 10px;">CONEXÃO ESTABELECIDA</h1>
+                            <p style="font-size: 1.2rem; color: #e2e8f0;">O Mestre da Aura agora está sincronizado com seus dados.</p>
+                            <div style="margin-top: 30px; font-size: 3rem;">🛰️ ✅</div>
+                            <p style="color: #64748b; margin-top: 30px;">Pode fechar esta janela e retornar ao App.</p>
+                        </div>
+                    </body>
+                </html>
+                """
+            else:
+                return jsonify({"erro": "Falha crítica ao salvar no banco de dados."}), 500
+        else:
+            logger.error(f"❌ Falha na troca de token Strava: {dados}")
+            return jsonify({"erro": "Falha na autenticação com Strava API"}), 400
+
+    except Exception as e:
+        logger.error(f"❌ Erro de conexão Strava: {e}")
+        return jsonify({"erro": "Erro interno no servidor"}), 500
+
+# ===================================================
+# 🔔 WEBHOOK (O OUVIDO DO SISTEMA)
+# ===================================================
+
+@strava_bp.route('/webhook', methods=['GET', 'POST'])
+def webhook():
+    """
+    Endpoint que o Strava chama quando você termina um treino.
+    """
+    # FASE 1: Verificação (Handshake) - O Strava chama isso ao configurar
+    if request.method == 'GET':
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+        
+        # Token de segurança definido por nós (pode ir para o .env futuramente)
+        VERIFY_TOKEN = "STRAVA_AURA_SECRET" 
+
+        if mode and token:
+            if mode == 'subscribe' and token == VERIFY_TOKEN:
+                logger.info("✅ Webhook Strava verificado com sucesso.")
+                return jsonify({"hub.challenge": challenge}), 200
+            else:
+                return jsonify({"erro": "Token de verificação inválido"}), 403
+        return "Webhook Aura Ativo", 200
+
+    # FASE 2: Recebimento de Eventos (POST) - Quando alguém treina
+    if request.method == 'POST':
+        dados_evento = request.json
+        logger.info(f"🔔 Evento Webhook Recebido: {dados_evento.get('object_type')}")
+        
+        try:
+            # Processamento Assíncrono (Idealmente)
+            # Por enquanto, chamamos a lógica direta
+            processar_evento_webhook(dados_evento)
+            return jsonify({"status": "EVENTO_PROCESSADO"}), 200
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao processar webhook: {e}")
+            # Retornamos 200 mesmo com erro para o Strava não ficar tentando reenviar infinitamente
+            return jsonify({"status": "ERRO_PROCESSAMENTO"}), 200
+
+# ===================================================
+# ARQUIVO 3: logic_asaas.py (MOTOR FINANCEIRO)
+# Gerencia a criação de clientes, emissão de PIX e persistência no MongoDB.
+# ===================================================
+
+# import os
+import requests
+import re
+import logging
+from datetime import datetime
+from data_manager import mongo_db
+
+# Configuração de Logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("AURA_FINANCEIRO")
+
+# URL de Produção do Asaas
+ASAAS_URL = "https://www.asaas.com/api/v3"
+
+def get_headers():
+    token = os.getenv("ASAAS_ACCESS_TOKEN")
+    if not token:
+        logger.error("❌ ASAAS_ACCESS_TOKEN não configurado no .env")
+    
+    return {
+        "Content-Type": "application/json",
+        "access_token": token or ""
+    }
+
+# ======================================================
+# 🛠️ UTILITÁRIOS (SANITIZAÇÃO)
+# ======================================================
+
+def _limpar_apenas_numeros(texto: str) -> str:
+    """Remove tudo que não for dígito (para CPF e Telefone)."""
+    if not texto: return ""
+    return re.sub(r'\D', '', str(texto))
+
+# ======================================================
+# 👤 GESTÃO DE CLIENTES (ASAAS)
+# ======================================================
+
+def criar_ou_buscar_cliente(usuario_dados: dict) -> str:
+    """
+    Verifica se o cliente já existe no Asaas pelo CPF ou Email.
+    Se não, cria um novo. Retorna o customer_id (cus_xxx).
+    """
+    headers = get_headers()
+    
+    cpf_limpo = _limpar_apenas_numeros(usuario_dados.get('cpf', ''))
+    email = usuario_dados.get('email', '')
+    
+    # 1. Tenta buscar por CPF (Mais seguro)
+    if cpf_limpo:
+        try:
+            busca = requests.get(f"{ASAAS_URL}/customers?cpfCnpj={cpf_limpo}", headers=headers)
+            if busca.status_code == 200:
+                dados = busca.json().get('data', [])
+                if dados:
+                    return dados[0]['id']
+        except Exception as e:
+            logger.error(f"Erro ao buscar cliente Asaas: {e}")
+
+    # 2. Se falhar, tenta buscar por Email
+    if email:
+        try:
+            busca = requests.get(f"{ASAAS_URL}/customers?email={email}", headers=headers)
+            if busca.status_code == 200:
+                dados = busca.json().get('data', [])
+                if dados:
+                    return dados[0]['id']
+        except Exception:
+            pass
+    
+    # 3. Se não existir, cria um novo
+    payload = {
+        "name": usuario_dados.get('nome', 'Cliente Aura'),
+        "cpfCnpj": cpf_limpo,
+        "email": email,
+        "mobilePhone": _limpar_apenas_numeros(usuario_dados.get('telefone', '')),
+        "notificationDisabled": False
+    }
+    
+    try:
+        criacao = requests.post(f"{ASAAS_URL}/customers", json=payload, headers=headers)
+        
+        if criacao.status_code == 200:
+            novo_id = criacao.json()['id']
+            logger.info(f"🆕 Novo cliente Asaas criado: {novo_id}")
+            return novo_id
+        else:
+            logger.error(f"❌ Erro Asaas (Criar Cliente): {criacao.text}")
+            return None
+    except Exception as e:
+        logger.error(f"❌ Erro de conexão Asaas: {e}")
+        return None
+
+# ======================================================
+# 💳 GERAÇÃO DE COBRANÇA & PERSISTÊNCIA
+# ======================================================
+
+def criar_cobranca(dados_pagamento: dict) -> dict:
+    """
+    Gera a cobrança (PIX ou Cartão) e SALVA NO MONGODB.
+    """
+    headers = get_headers()
+    
+    user_id = dados_pagamento.get('user_id') # Obrigatório para persistência
+    if not user_id:
+        logger.warning("⚠️ Tentativa de criar cobrança sem user_id vinculado.")
+
+    # 1. Identificar Cliente no Asaas
+    usuario_info = dados_pagamento.get('usuario', {})
+    customer_id = criar_ou_buscar_cliente(usuario_info)
+    
+    if not customer_id:
+        return {"erro": "Falha ao registrar seus dados no sistema de pagamento."}
+
+    # 2. Configurar Cobrança
+    metodo = dados_pagamento.get('metodo', 'pix').lower()
+    billing_type = "PIX" if metodo == 'pix' else "CREDIT_CARD"
+    valor_float = float(dados_pagamento['valor'])
+    
+    payload = {
+        "customer": customer_id,
+        "billingType": billing_type,
+        "value": valor_float,
+        "dueDate": datetime.now().strftime("%Y-%m-%d"),
+        "description": f"Pedido Aura: {dados_pagamento.get('descricao', 'Produtos')}",
+        # Opcional: externalReference ajuda a linkar com o ID do seu banco se já tivesse criado antes
+        "externalReference": str(user_id) if user_id else "guest"
+    }
+
+    # 3. Enviar para Asaas
+    try:
+        response = requests.post(f"{ASAAS_URL}/payments", json=payload, headers=headers)
+        
+        if response.status_code != 200:
+            erro_msg = response.json().get('errors', [{'description': 'Erro desconhecido'}])[0]['description']
+            logger.error(f"❌ Asaas recusou cobrança: {erro_msg}")
+            return {"erro": f"Pagamento não iniciado: {erro_msg}"}
+        
+        data_asaas = response.json()
+        payment_id = data_asaas['id']
+        logger.info(f"💰 Cobrança criada: {payment_id} | Valor: {valor_float}")
+
+        # 4. PERSISTÊNCIA (Salvar no MongoDB)
+        # Isso garante que o pedido existe no sistema, mesmo se o app fechar
+        if mongo_db is not None and user_id:
+            novo_pedido = {
+                "user_id": str(user_id),
+                "asaas_id": payment_id,
+                "customer_id": customer_id,
+                "valor": valor_float,
+                "metodo": metodo,
+                "status": "PENDING", # PENDING, RECEIVED, OVERDUE
+                "descricao": dados_pagamento.get('descricao', ''),
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+                "json_asaas": data_asaas # Backup do retorno
+            }
+            mongo_db["pedidos"].insert_one(novo_pedido)
+
+        # 5. Retorno Específico por Método
+        
+        # CASO PIX: Buscar QR Code
+        if billing_type == "PIX":
+            qr_response = requests.get(f"{ASAAS_URL}/payments/{payment_id}/pixQrCode", headers=headers)
+            if qr_response.status_code == 200:
+                qr_data = qr_response.json()
+                return {
+                    "sucesso": True,
+                    "id_pagamento": payment_id,
+                    "tipo": "pix",
+                    "payload_pix": qr_data['payload'],
+                    "imagem_qr": qr_data['encodedImage']
+                }
+        
+        # CASO CARTÃO/BOLETO: Link direto
+        return {
+            "sucesso": True,
+            "id_pagamento": payment_id,
+            "tipo": "cartao",
+            "link_pagamento": data_asaas['invoiceUrl']
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Erro crítico no pagamento: {e}")
+        return {"erro": "Falha de comunicação com o gateway de pagamento."}

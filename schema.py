@@ -2,38 +2,39 @@ from datetime import datetime
 from typing import Dict, Any
 
 # ==============================================================
-# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 2.0 - MONGODB)
+# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 2.0 - AURA PERFORMANCE)
 # ==============================================================
 
 def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[str, Any]:
     """
     Retorna a estrutura base de um novo usuário para o MongoDB.
-    Agora sincronizado com o Frontend (Base44).
+    Sincronizado com a lógica de Gamificação e Biohacking.
     """
+    agora_iso = datetime.now().isoformat()
+    
     return {
-        # --- 1. Identificação e Acesso (CRÍTICO PARA FRONTEND) ---
+        # --- 1. IDENTIFICAÇÃO E ACESSO ---
         "email": email,
-        "auth_provider": "email", # ou "strava"
-        "created_at": str(datetime.now()),
-        "updated_at": str(datetime.now()),
+        "auth_provider": "email", 
+        "created_at": agora_iso,
+        "updated_at": agora_iso,
         "profile_picture_url": None,
         "plano": "free",          # free, plus, pro
-        "cla_atual_id": None,     # ID do Clã se estiver em um
+        "cla_atual_id": None,     
         
-        # --- 2. Perfil do Jogador (Gamificação) ---
+        # --- 2. PERFIL DO JOGADOR (GAMIFICAÇÃO CORE) ---
         "jogador": {
             "nome": nome,
             "nivel": 1,
             "experiencia": 0,
-            "saldo_coins": 0,      # Moeda Comum (Aura Coins)
-            "saldo_cristais": 0,   # Moeda Premium
+            "saldo_coins": 0,      # Aura Coins (Moeda de jogo)
+            "saldo_cristais": 0,   # Cristais (Moeda Premium)
             "avatar_frame_id": "default",
             "titulo_atual": "Iniciado",
             "missoes_concluidas": 0,
-            # Metas e Preferências
             "metas": {
                 "peso_alvo": 70.0,
-                "objetivo": "saúde", # hipertrofia, resistencia, saude
+                "objetivo": "saúde", 
                 "frequencia_treino": "3x"
             },
             "preferencias": {
@@ -42,10 +43,9 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             }
         },
 
-        # --- 3. Dados Fisiológicos (Limpo e Unificado) ---
+        # --- 3. DADOS FISIOLÓGICOS (MÉTRICAS DE SAÚDE) ---
         "dados_fisiologicos": {
             "ultima_sincronizacao": "",
-            # Métricas principais (Fonte da verdade)
             "frequencia_cardiaca": {"valor": 0, "repouso": 0},
             "hrv": {"valor": 0, "status": "sem_dados"},
             "sono": {"horas": 0.0, "qualidade": "desconhecida"},
@@ -54,15 +54,15 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             "calorias_hoje": 0
         },
 
-        # --- 4. Relacionamento com a IA (Migrado do Global) ---
+        # --- 4. AFINIDADE COM A IA (MESTRE DA AURA) ---
         "afinidade_ia": {
-            "score": 50,          # 0 a 100
+            "score": 50,          
             "nivel": "neutro",    # hostil, neutro, aliado, devoto
             "humor_atual": "focado",
             "ultima_interacao": ""
         },
 
-        # --- 5. Saúde Sistêmica (Homeostase) ---
+        # --- 5. HOMEOSTASE (SAÚDE SISTÊMICA) ---
         "homeostase": {
             "score": 50,
             "estado": "Aguardando dados...",
@@ -70,42 +70,36 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             "ultima_analise": ""
         },
 
-        # --- 6. Sistema de Missões e Gamificação ---
+        # --- 6. PROGRESSÃO DIÁRIA ---
         "gamificacao": {
             "xp_acumulado_hoje": 0,
-            "missoes_ativas": [],       # Lista de objetos missão
+            "missoes_ativas": [],       
             "missoes_concluidas_hoje": [],
             "ultima_geracao_missoes": ""
         },
 
-        # --- 7. Integrações e Tokens ---
+        # --- 7. INTEGRAÇÕES ---
         "integracoes": {
             "strava": {
                 "conectado": False,
                 "atleta_id": None,
-                "tokens": {} # Access e Refresh tokens ficam aqui
+                "tokens": {} 
             },
             "apple_health": {"conectado": False},
             "garmin": {"conectado": False}
         },
         
-        # --- 8. Configurações Internas ---
+        # --- 8. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
             "versao_schema": "2.0"
         }
-        
-        # NOTA: O campo 'historico' (chat) foi REMOVIDO. 
-        # Será salvo na coleção 'chats' para performance.
     }
 
 def obter_schema_padrao_global() -> Dict[str, Any]:
-    """
-    Estrutura da Memória Global (Apenas Configurações e Analytics).
-    Não guarda mais dados pessoais.
-    """
+    """Estrutura da Memória Global (Analytics e Cache de Ranking)."""
     return {
-        "_id": "global_state", # ID Fixo para facilitar busca (Singleton)
+        "_id": "global_state", 
         "sistema": {
             "versao_api": "2.0.1",
             "status": "online",
@@ -120,22 +114,22 @@ def obter_schema_padrao_global() -> Dict[str, Any]:
             "top_100": [],
             "ultima_atualizacao": ""
         },
-        "ultima_atualizacao": str(datetime.now())
+        "ultima_atualizacao": datetime.now().isoformat()
     }
 
 def obter_schema_padrao_produto() -> Dict[str, Any]:
-    """Define a estrutura de um item no mercado."""
+    """Define a estrutura de um item na loja do Aura."""
     return {
         "id": "",
         "nome": "",
         "marca": "",
         "preco_cheio": 0.0,
-        "desconto_percentual": 12,
+        "desconto_percentual": 0,
         "preco_final": 0.0,
         "custo_aura_coins": 0,
         "cashback_cristais": 0,
         "nivel_minimo": 1,
         "imagem_url": "",
-        "categoria": "suplementos", # suplementos, equipamentos, digital
+        "categoria": "suplementos",
         "estoque": True
     }

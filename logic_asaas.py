@@ -2,7 +2,7 @@ import os
 import requests
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from data_manager import mongo_db
 
 # Configuração de Logs
@@ -54,7 +54,7 @@ def criar_ou_buscar_cliente(usuario_dados: dict) -> str:
                 if dados:
                     return dados[0]['id']
         except Exception as e:
-            logger.error(f"Erro ao buscar cliente Asaas: {e}")
+            logger.error(f"Erro ao buscar cliente Asaas por CPF: {e}")
 
     # 2. Se falhar, tenta buscar por Email
     if email:
@@ -100,7 +100,7 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     """
     headers = get_headers()
     
-    user_id = dados_pagamento.get('user_id') # Obrigatório para persistência
+    user_id = dados_pagamento.get('user_id')
     if not user_id:
         logger.warning("⚠️ Tentativa de criar cobrança sem user_id vinculado.")
 
@@ -109,21 +109,23 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     customer_id = criar_ou_buscar_cliente(usuario_info)
     
     if not customer_id:
-        return {"erro": "Falha ao registrar seus dados no sistema de pagamento."}
+        return {"erro": "Falha ao registrar dados no gateway de pagamento."}
 
     # 2. Configurar Cobrança
     metodo = dados_pagamento.get('metodo', 'pix').lower()
     billing_type = "PIX" if metodo == 'pix' else "CREDIT_CARD"
     valor_float = float(dados_pagamento['valor'])
     
+    # Ajuste: Vencimento para o dia seguinte para evitar erros de virada de lote
+    vencimento = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    
     payload = {
         "customer": customer_id,
         "billingType": billing_type,
         "value": valor_float,
-        "dueDate": datetime.now().strftime("%Y-%m-%d"),
-        "description": f"Pedido Aura: {dados_pagamento.get('descricao', 'Produtos')}",
-        # Opcional: externalReference ajuda a linkar com o ID do seu banco se já tivesse criado antes
-        "externalReference": str(user_id) if user_id else "guest"
+        "dueDate": vencimento,
+        "description": f"Aura OS: {dados_pagamento.get('descricao', 'Produtos Performance')}",
+        "externalReference": str(user_id)
     }
 
     # 3. Enviar para Asaas
@@ -133,14 +135,12 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         if response.status_code != 200:
             erro_msg = response.json().get('errors', [{'description': 'Erro desconhecido'}])[0]['description']
             logger.error(f"❌ Asaas recusou cobrança: {erro_msg}")
-            return {"erro": f"Pagamento não iniciado: {erro_msg}"}
+            return {"erro": f"Pagamento recusado: {erro_msg}"}
         
         data_asaas = response.json()
         payment_id = data_asaas['id']
-        logger.info(f"💰 Cobrança criada: {payment_id} | Valor: {valor_float}")
 
-        # 4. PERSISTÊNCIA (Salvar no MongoDB)
-        # Isso garante que o pedido existe no sistema, mesmo se o app fechar
+        # 4. PERSISTÊNCIA (Harmonia com o Schema 2.0)
         if mongo_db is not None and user_id:
             novo_pedido = {
                 "user_id": str(user_id),
@@ -148,17 +148,14 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
                 "customer_id": customer_id,
                 "valor": valor_float,
                 "metodo": metodo,
-                "status": "PENDING", # PENDING, RECEIVED, OVERDUE
+                "status": "PENDING",
                 "descricao": dados_pagamento.get('descricao', ''),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now(),
-                "json_asaas": data_asaas # Backup do retorno
+                "created_at": datetime.now().isoformat(), # Padronizado ISO
+                "updated_at": datetime.now().isoformat()
             }
             mongo_db["pedidos"].insert_one(novo_pedido)
 
-        # 5. Retorno Específico por Método
-        
-        # CASO PIX: Buscar QR Code
+        # 5. Retorno para o Frontend (Base44)
         if billing_type == "PIX":
             qr_response = requests.get(f"{ASAAS_URL}/payments/{payment_id}/pixQrCode", headers=headers)
             if qr_response.status_code == 200:
@@ -171,14 +168,13 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
                     "imagem_qr": qr_data['encodedImage']
                 }
         
-        # CASO CARTÃO/BOLETO: Link direto
         return {
             "sucesso": True,
             "id_pagamento": payment_id,
             "tipo": "cartao",
-            "link_pagamento": data_asaas['invoiceUrl']
+            "link_pagamento": data_asaas.get('invoiceUrl')
         }
 
     except Exception as e:
         logger.error(f"❌ Erro crítico no pagamento: {e}")
-        return {"erro": "Falha de comunicação com o gateway de pagamento."}
+        return {"erro": "Falha de comunicação com o sistema financeiro."}
