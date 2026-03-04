@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+from bson.objectid import ObjectId # Importação vital para converter strings de ID
 
 # Importações do Data Manager (MongoDB)
 from data_manager import buscar_usuario_por_id, atualizar_usuario
@@ -22,15 +23,23 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
         logger.warning("⚠️ Tentativa de carregar memória sem user_id.")
         return {}
 
-    usuario = buscar_usuario_por_id(user_id)
-    
-    if usuario:
-        # A conversão de _id para string já é tratada no data_manager, 
-        # mas mantemos aqui como redundância de segurança para o Frontend.
-        usuario["_id"] = str(usuario["_id"])
-        return usuario
-    else:
-        logger.error(f"❌ Usuário {user_id} não encontrado no banco.")
+    # [AURA FIX] Limpeza de espaços em branco que podem vir do token/frontend
+    clean_user_id = str(user_id).strip()
+
+    try:
+        # Tenta carregar o usuário via Data Manager
+        usuario = buscar_usuario_por_id(clean_user_id)
+        
+        if usuario:
+            # A conversão de _id para string garante compatibilidade com JSON/Frontend
+            usuario["_id"] = str(usuario["_id"])
+            return usuario
+        else:
+            logger.error(f"❌ Usuário {clean_user_id} não encontrado no banco.")
+            return {}
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao processar busca de usuário {clean_user_id}: {e}")
         return {}
 
 def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
@@ -43,6 +52,9 @@ def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
         return False
 
     try:
+        # [AURA FIX] Garantir ID limpo para atualização
+        clean_user_id = str(user_id).strip()
+        
         # Clonamos os dados para não modificar o objeto original em memória
         dados_para_salvar = dados.copy()
         
@@ -54,7 +66,7 @@ def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
         dados_para_salvar["updated_at"] = datetime.now().isoformat()
 
         # Executa a atualização via Data Manager
-        return atualizar_usuario(user_id, dados_para_salvar)
+        return atualizar_usuario(clean_user_id, dados_para_salvar)
         
     except Exception as e:
         logger.error(f"❌ Erro crítico ao salvar memória do usuário {user_id}: {e}")
@@ -76,12 +88,16 @@ def redefinir_metas_usuario(user_id: str) -> bool:
         return False
 
     # Obtém um template limpo do Schema 2.0
-    padrao = obter_schema_padrao_usuario(email=memoria.get("email", ""), nome=memoria.get("jogador", {}).get("nome", ""))
+    # Ajustado para usar campos diretos conforme o seu MongoDB atual
+    padrao = obter_schema_padrao_usuario(
+        email=memoria.get("email", ""), 
+        nome=memoria.get("nome", "Atleta")
+    )
     
     # Atualiza especificamente os blocos de metas e preferências
     atualizacao = {
-        "jogador.metas": padrao["jogador"]["metas"],
-        "jogador.preferencias": padrao["jogador"]["preferencias"]
+        "objetivo": "Performance Máxima",
+        "bio_performance": padrao.get("bio_performance", {})
     }
     
     return salvar_memoria(user_id, atualizacao)
@@ -91,4 +107,4 @@ def obter_status_fisiologico(user_id: str) -> Dict[str, Any]:
     Retorna exclusivamente o bloco de dados fisiológicos (FC, Sono, Energia).
     """
     memoria = carregar_memoria(user_id)
-    return memoria.get("dados_fisiologicos", {})
+    return memoria.get("status_atual", {}) # Ajustado para o campo correto no seu banco

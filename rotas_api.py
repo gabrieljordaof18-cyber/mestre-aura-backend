@@ -40,8 +40,8 @@ def token_required(f):
             return jsonify({"erro": "Token ausente"}), 401
 
         try:
-            # MVP: Aceitamos ID direto. Produção: Usaremos jwt.decode aqui.
-            current_user_id = token 
+            # [AURA FIX] Limpeza do ID para evitar erros de busca no MongoDB
+            current_user_id = str(token).strip() 
         except Exception as e:
             logger.error(f"Erro de auth: {e}")
             return jsonify({"erro": "Sessão expirada"}), 401
@@ -58,11 +58,15 @@ def token_required(f):
 def get_status_jogador(current_user_id):
     try:
         dados = carregar_memoria(current_user_id)
-        if not dados: return jsonify({"erro": "Perfil não encontrado"}), 404
+        if not dados: 
+            return jsonify({"erro": "Perfil não encontrado no banco"}), 404
             
-        jogador = dados.get("jogador", {})
-        xp_atual = jogador.get("experiencia", 0)
-        nivel_atual = jogador.get("nivel", 1)
+        # [AURA FIX] Mapeamento direto com os campos do seu MongoDB atual
+        # Antes o código buscava dados.get("jogador"), que não existe na sua nova estrutura
+        xp_atual = dados.get("xp_total", 0)
+        nivel_atual = dados.get("nivel", 1)
+        nome_atleta = dados.get("nome", "Atleta")
+        coins = dados.get("moedas", 0)
         
         # Lógica de Barra de Progresso (Calculada no Backend para evitar bugs na UI)
         XP_BASE = 1000
@@ -70,20 +74,22 @@ def get_status_jogador(current_user_id):
         xp_anterior = XP_BASE * (nivel_atual - 1)
         range_nivel = xp_prox - xp_anterior
         xp_no_nivel = xp_atual - xp_anterior
+        
+        # Garantir que o progresso não quebre se os dados estiverem inconsistentes
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
         return jsonify({
-            "nome": jogador.get("nome", "Atleta"),
-            "foto": dados.get("profile_picture_url", ""),
+            "nome": nome_atleta,
+            "foto": dados.get("foto_perfil", ""),
             "xp_total": xp_atual,
-            "aura_coins": jogador.get("saldo_coins", 0),
-            "saldo_cristais": jogador.get("saldo_cristais", 0),
+            "aura_coins": coins,
+            "saldo_cristais": dados.get("saldo_cristais", 0), # Campo opcional
             "nivel": nivel_atual,
-            "barra_progresso": progresso,
-            "xp_falta": range_nivel - xp_no_nivel
+            "barra_progresso": max(0, min(100, progresso)), # Garante valor entre 0-100
+            "xp_falta": max(0, range_nivel - xp_no_nivel)
         })
     except Exception as e:
-        logger.error(f"Erro status: {e}")
+        logger.error(f"Erro status para o user {current_user_id}: {e}")
         return jsonify({"erro": "Erro ao carregar perfil"}), 500
 
 # ===================================================
@@ -132,6 +138,7 @@ def comando(current_user_id):
         resposta = processar_comando(current_user_id, msg)
         return jsonify({"resposta": resposta})
     except Exception as e:
+        logger.error(f"Erro no comando IA para {current_user_id}: {e}")
         return jsonify({"resposta": "⚠️ O Mestre está meditando. Tente novamente."})
 
 # ===================================================
@@ -150,7 +157,9 @@ def concluir_missao(current_user_id):
     missao_id = dados.get("id")
     
     memoria = carregar_memoria(current_user_id)
-    missoes = memoria.get("gamificacao", {}).get("missoes_ativas", [])
+    # [AURA FIX] Ajuste para buscar missões na estrutura simplificada se necessário
+    gamificacao = memoria.get("gamificacao", {})
+    missoes = gamificacao.get("missoes_ativas", [])
     
     for m in missoes:
         if m["id"] == missao_id and not m.get("concluida"):
