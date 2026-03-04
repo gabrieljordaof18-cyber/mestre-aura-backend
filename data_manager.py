@@ -115,7 +115,7 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
             atualizar_usuario(str(usuario_existente["_id"]), {
                 "integracoes.strava.conectado": True,
                 "integracoes.strava.tokens": tokens,
-                "foto_perfil": foto # Ajustado para bater com seu novo schema
+                "foto_perfil": foto 
             })
             return True
         else:
@@ -146,7 +146,6 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
 def obter_ranking_global(limite=50):
     if mongo_db is None: return []
     try:
-        # [AURA FIX] Ajustado para buscar 'xp_total' na raiz, conforme seu documento manual
         cursor = mongo_db["usuarios"].find(
             {"plano": {"$ne": "banned"}},
             {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0}
@@ -195,8 +194,12 @@ def ler_plano(user_id: str, tipo: str):
 # ⚡ OTIMIZAÇÃO DE PERFORMANCE (ÍNDICES)
 # ==============================================================
 if mongo_db is not None:
-    # Ajustado para a coleção 'usuarios'
-    mongo_db["usuarios"].create_index("email", unique=True)
-    mongo_db["usuarios"].create_index("integracoes.strava.atleta_id")
-    mongo_db["usuarios"].create_index([("xp_total", -1)])
-    logger.info("⚡ Índices de performance do MongoDB validados na coleção 'usuarios'.")
+    try:
+        # [AURA FIX] Adicionado 'sparse=True'. 
+        # Isso ignora documentos que não possuem o campo email, evitando o erro de Duplicata Nula.
+        mongo_db["usuarios"].create_index("email", unique=True, sparse=True)
+        mongo_db["usuarios"].create_index("integracoes.strava.atleta_id")
+        mongo_db["usuarios"].create_index([("xp_total", -1)])
+        logger.info("⚡ Índices de performance do MongoDB validados com segurança (Sparse Index).")
+    except Exception as e:
+        logger.warning(f"⚠️ Aviso ao criar índices: {e}. Verifique se há e-mails duplicados no Atlas.")
