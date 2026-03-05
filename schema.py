@@ -8,8 +8,9 @@ from typing import Dict, Any
 def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[str, Any]:
     """
     Retorna a estrutura base de um novo usuário para o MongoDB.
-    [AURA FIX] Ajustado para que xp, nivel e moedas fiquem na RAIZ, 
-    conforme sua estrutura manual no MongoDB Atlas e exigência do Base44.
+    [AURA FIX] Sincronizado para a Nova Economia:
+    - Aura Coins (moedas) = XP (1:1)
+    - Cristais (saldo_cristais) = XP / 10
     """
     agora_iso = datetime.now().isoformat()
     
@@ -20,20 +21,19 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         "auth_provider": "email", 
         "created_at": agora_iso,
         "updated_at": agora_iso,
-        "foto_perfil": "", # [AURA FIX] Nomeado conforme o Base44 espera
+        "foto_perfil": "", 
         "plano": "free",
-        "objetivo": "Performance Máxima", # [AURA FIX] Campo raiz para a IA ler
+        "objetivo": "Performance Máxima", 
         
         # --- 2. PROGRESSÃO (CAMPOS NA RAIZ PARA SINCRONIZAÇÃO ATLAS) ---
-        # [AURA FIX] Removido o objeto 'jogador' para evitar conflito de busca
+        # [AURA FIX] Estrutura unificada para evitar moedas fantasmas
         "nivel": 1,
-        "xp_total": 0,         # [AURA FIX] Nomeado conforme sua inserção manual
-        "moedas": 0,           # [AURA FIX] Sincronizado com o cabeçalho do app
-        "saldo_cristais": 0,   # Moeda Premium
+        "xp_total": 0,         # XP Acumulado
+        "moedas": 0,           # Aura Coins Oficiais (Sincronizado 1:1 com XP)
+        "saldo_cristais": 0,   # Moeda Premium (Sincronizado 10:1 com XP)
         "titulo_atual": "Iniciado",
         
         # --- 3. STATUS ATUAL (BIO-MÉTRICAS) ---
-        # [AURA FIX] Nomeado 'status_atual' para harmonia com o seu Atlas
         "status_atual": {
             "ultima_sincronizacao": agora_iso,
             "fadiga": 0,
@@ -49,7 +49,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         "homeostase": {
             "score": 100,
             "estado": "Plena Harmonia 🌟",
-            "componentes": {"corpo": 100, "mente": 100, "energia": 100},
+            "componentes": {"corpo": 100, "mente": 100, "energy": 100},
             "ultima_analise": agora_iso
         },
 
@@ -72,7 +72,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         # --- 7. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
-            "versao_schema": "2.0.1"
+            "versao_schema": "2.0.2" # Incremento de versão para controle de deploy
         }
     }
 
@@ -81,7 +81,7 @@ def obter_schema_padrao_global() -> Dict[str, Any]:
     return {
         "_id": "global_state", 
         "sistema": {
-            "versao_api": "2.0.1",
+            "versao_api": "2.0.2",
             "status": "online",
             "manutencao": False
         },
@@ -104,7 +104,7 @@ def obter_schema_padrao_produto() -> Dict[str, Any]:
         "nome": "",
         "marca": "",
         "preco_final": 0.0,
-        "custo_moedas": 0, # [AURA FIX] Sincronizado com o campo 'moedas'
+        "custo_moedas": 0, # [AURA FIX] Sincronizado com o campo 'moedas' raiz
         "nivel_minimo": 1,
         "imagem_url": "",
         "categoria": "suplementos",

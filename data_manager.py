@@ -44,13 +44,13 @@ except Exception as e:
 # ==============================================================
 
 def buscar_usuario_por_id(user_id: str):
-    # [AURA FIX] Comparação explícita com None para evitar erro de truth value no PyMongo
+    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
     if mongo_db is None: 
         logger.error("❌ MongoDB inacessível em buscar_usuario_por_id")
         return None
     try:
-        # [AURA FIX] Garantir que o ID seja limpo e convertido para ObjectId
-        clean_id = str(user_id).strip()
+        # [AURA FIX] Limpeza rigorosa para garantir que o ID chegue limpo
+        clean_id = str(user_id).strip().replace('"', '').replace("'", "")
         # Buscamos na coleção 'usuarios' conforme sua estrutura manual no Atlas
         doc = mongo_db["usuarios"].find_one({"_id": ObjectId(clean_id)})
         if doc:
@@ -62,7 +62,6 @@ def buscar_usuario_por_id(user_id: str):
         return None
 
 def buscar_usuario_por_email(email: str):
-    # [AURA FIX] Comparação explícita com None
     if mongo_db is None: return None
     try:
         doc = mongo_db["usuarios"].find_one({"email": email})
@@ -91,8 +90,8 @@ def criar_novo_usuario(email: str, nome: str, auth_provider="email"):
 def atualizar_usuario(user_id: str, dados_atualizacao: dict):
     if mongo_db is None: return False
     try:
-        clean_id = str(user_id).strip()
-        # Removemos o _id se ele vier nos dados para não dar erro de imutabilidade do MongoDB
+        clean_id = str(user_id).strip().replace('"', '').replace("'", "")
+        # Removemos o _id se ele vier nos dados para não dar erro de imutabilidade
         if "_id" in dados_atualizacao:
             del dados_atualizacao["_id"]
             
@@ -157,7 +156,7 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
 def obter_ranking_global(limite=50):
     if mongo_db is None: return []
     try:
-        # Busca baseada no campo 'xp_total' que o Frontend (Base44) espera
+        # [AURA FIX] Busca baseada em xp_total, refletindo o saldo oficial de moedas (1:1)
         cursor = mongo_db["usuarios"].find(
             {"plano": {"$ne": "banned"}},
             {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0}
@@ -169,7 +168,7 @@ def obter_ranking_global(limite=50):
             "foto": doc.get("foto_perfil", ""),
             "xp_total": doc.get("xp_total", 0),
             "nivel": doc.get("nivel", 1),
-            "titulo": "Atleta"
+            "titulo": "Atleta Elite"
         } for i, doc in enumerate(cursor)]
     except Exception as e:
         logger.error(f"❌ Erro no ranking: {e}")
@@ -211,11 +210,19 @@ def ler_plano(user_id: str, tipo: str):
 # ==============================================================
 if mongo_db is not None:
     try:
-        # [AURA FIX] 'sparse=True' essencial para evitar o DuplicateKeyError 
-        # caso existam documentos sem e-mail ou com e-mail nulo.
-        mongo_db["usuarios"].create_index("email", unique=True, sparse=True)
-        mongo_db["usuarios"].create_index("integracoes.strava.atleta_id", sparse=True)
-        mongo_db["usuarios"].create_index([("xp_total", -1)])
-        logger.info("⚡ Índices de performance do MongoDB validados com segurança (Sparse Index).")
+        # [AURA FIX] Verificação preventiva para não duplicar índices existentes
+        colecao_usuarios = mongo_db["usuarios"]
+        indices_atuais = colecao_usuarios.index_information()
+        
+        if "email_1" not in indices_atuais:
+            colecao_usuarios.create_index("email", unique=True, sparse=True)
+            
+        if "integracoes.strava.atleta_id_1" not in indices_atuais:
+            colecao_usuarios.create_index("integracoes.strava.atleta_id", sparse=True)
+            
+        if "xp_total_-1" not in indices_atuais:
+            colecao_usuarios.create_index([("xp_total", -1)])
+            
+        logger.info("⚡ Índices de performance do MongoDB validados com segurança.")
     except Exception as e:
-        logger.warning(f"⚠️ Aviso ao criar índices: {e}. Verifique se há e-mails duplicados no Atlas.")
+        logger.warning(f"⚠️ Aviso ao gerenciar índices: {e}")

@@ -22,7 +22,9 @@ XP_BONUS_MADRUGADA = 50
 XP_POR_METRO_ELEVACAO = 2
 XP_BONUS_FLASH = 30
 VELOCIDADE_FLASH_MS = 2.78  # ~10km/h
-TAXA_CONVERSAO_COINS = 20   # 20 XP = 1 Aura Coin (Ajustado para o campo 'moedas')
+
+# [AURA REMOVED] Removida a taxa de conversão antiga (20:1) 
+# Agora usamos a lógica centralizada em aplicar_xp (1:1 e 10:1)
 
 # =========================================================
 # 🧠 CÉREBRO DA INTEGRAÇÃO STRAVA (SAAS / MULTI-USER)
@@ -48,13 +50,12 @@ def processar_evento_webhook(dados_evento: dict) -> bool:
         return False
 
     # 2. PROTEÇÃO CONTRA DUPLICIDADE (Idempotência)
-    # Evita que o mesmo treino gere XP duas vezes se o webhook reenviar
     if mongo_db["atividades_strava"].find_one({"id": atividade_id}):
         logger.warning(f"⚠️ Atividade {atividade_id} já processada anteriormente.")
         return True
 
     # 3. IDENTIFICAR JOGADOR (Sincronização com a coleção correta)
-    # [AURA FIX] Alterado de 'users' para 'usuarios' conforme sua estrutura no Atlas
+    # Alterado de 'users' para 'usuarios' conforme sua estrutura no Atlas
     usuario = mongo_db["usuarios"].find_one({"integracoes.strava.atleta_id": strava_id_atleta})
     
     if not usuario:
@@ -84,38 +85,27 @@ def processar_evento_webhook(dados_evento: dict) -> bool:
         logger.error(f"❌ Falha na conexão de rede com Strava: {e}")
         return False
 
-    # 6. CÁLCULO DE RECOMPENSAS (XP e Aura Coins)
-    xp_total, lista_bonus = calcular_xp_avancado(dados_treino)
-    
-    # [AURA FIX] Sincronização com o campo 'moedas' da sua raiz
-    coins_ganhas = max(1, int(xp_total / TAXA_CONVERSAO_COINS)) if xp_total > 0 else 0
+    # 6. CÁLCULO DE RECOMPENSAS (XP Base)
+    xp_ganho, lista_bonus = calcular_xp_avancado(dados_treino)
 
     # 7. PERSISTÊNCIA E ATUALIZAÇÃO DO JOGADOR
     try:
-        # A. Salvar no Histórico (Coleção 'atividades_strava')
+        # [AURA FIX] Aplicar XP, Moedas e Cristais usando a Regra de Ouro (100% Sincronizado)
+        # Chamamos a função centralizada que já faz: Moedas = XP e Cristais = XP / 10
+        resultado_economia = aplicar_xp(user_id, xp_ganho)
+        
+        # A. Salvar no Histórico (Coleção 'atividades_strava') com metadados do ganho
         dados_treino["user_id"] = user_id
         dados_treino["aura_analysis"] = {
-            "xp_ganho": xp_total,
-            "coins_ganhas": coins_ganhas,
-            "bonus": lista_bonus,
+            "xp_ganho": xp_ganho,
+            "moedas_ganhas": resultado_economia.get("moedas_ganhas", 0),
+            "cristais_ganhos": resultado_economia.get("cristais_ganhos", 0),
+            "bonus_detectados": lista_bonus,
             "processed_at": datetime.now().isoformat()
         }
         mongo_db["atividades_strava"].insert_one(dados_treino)
-
-        # B. Aplicar XP e Nível (Usando a lógica de logic_gamificacao.py ajustada para a raiz)
-        aplicar_xp(user_id, xp_total)
         
-        # C. Atualizar Saldo de Moedas (Sincronização com o campo 'moedas' na raiz)
-        # [AURA FIX] Alterado para atualizar o campo 'moedas' diretamente, sem o objeto 'jogador'
-        mongo_db["usuarios"].update_one(
-            {"_id": usuario["_id"]},
-            {
-                "$inc": {"moedas": coins_ganhas},
-                "$set": {"updated_at": datetime.now().isoformat()}
-            }
-        )
-        
-        logger.info(f"✅ Treino Concluído! User: {user_id} | +{xp_total} XP | +{coins_ganhas} Aura Coins")
+        logger.info(f"✅ Treino Strava Concluído! User: {user_id} | +{xp_ganho} XP/Moedas | +{resultado_economia.get('cristais_ganhos')} Cristais")
         return True
 
     except Exception as e:
@@ -127,7 +117,6 @@ def obter_token_valido(usuario: dict) -> str:
     integracao = usuario.get('integracoes', {}).get('strava', {})
     tokens = integracao.get('tokens', {})
     
-    # Se o token ainda é válido por mais de 5 minutos, reutiliza
     if tokens.get('expires_at', 0) > (time.time() + 300):
         return tokens.get('access_token')
         
@@ -144,7 +133,6 @@ def obter_token_valido(usuario: dict) -> str:
         
         if res.status_code == 200:
             novos = res.json()
-            # [AURA FIX] Atualiza na coleção 'usuarios'
             mongo_db["usuarios"].update_one(
                 {"_id": usuario["_id"]},
                 {"$set": {
@@ -166,36 +154,29 @@ def calcular_xp_avancado(treino: dict) -> tuple:
     xp = 0
     motivos = []
 
-    # Extração de dados da API do Strava (Distância vem em metros)
     dist_km = treino.get('distance', 0) / 1000
     elevacao = treino.get('total_elevation_gain', 0)
     vel_ms = treino.get('average_speed', 0)
     
-    # Parsing de Hora para Bônus Madrugador (Início do treino)
     try:
-        # Formato esperado: "2026-03-05T06:30:00Z"
         hora_str = treino.get('start_date_local', 'T12')
         hora = int(hora_str.split('T')[1][:2])
     except Exception: 
         hora = 12
 
-    # A. Cálculo por Distância
     if dist_km > 0.1:
         ganho_dist = int(dist_km * XP_POR_KM)
         xp += max(10, ganho_dist)
         motivos.append(f"Distância ({dist_km:.1f}km)")
 
-    # B. Bônus por Horário (Consistência matinal)
     if 4 <= hora < 8:
         xp += XP_BONUS_MADRUGADA
         motivos.append("☀️ Bônus Madrugador")
 
-    # C. Bônus por Esforço de Elevação
     if elevacao > 50:
         xp += int(elevacao * XP_POR_METRO_ELEVACAO)
         motivos.append(f"⛰️ Elevação (+{int(elevacao)}m)")
 
-    # D. Bônus por Intensidade (Velocidade)
     if vel_ms > VELOCIDADE_FLASH_MS:
         xp += XP_BONUS_FLASH
         motivos.append("⚡ Ritmo The Flash")

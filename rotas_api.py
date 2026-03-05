@@ -63,11 +63,14 @@ def get_status_jogador(current_user_id):
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
         # [AURA FIX] Sincronização direta com a RAIZ do seu MongoDB
+        # Removida a chave 'moedas' secundária para evitar o conflito visual do raio de 50
         xp_atual = int(dados.get("xp_total", 0))
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
-        # [AURA FIX] Mapeado para 'moedas' conforme seu JSON manual do Atlas
-        coins = dados.get("moedas", 0)
+        
+        # [AURA FIX] Agora o Frontend usará o XP_TOTAL como a base para o saldo de Aura Coins
+        # e o saldo_cristais para a moeda premium, conforme sua regra de 10:1
+        cristais = int(dados.get("saldo_cristais", 0))
         
         # Lógica de Barra de Progresso (Calculada no Backend para evitar bugs na UI)
         XP_BASE = 1000
@@ -79,14 +82,13 @@ def get_status_jogador(current_user_id):
         # Garantir que o progresso seja um inteiro entre 0 e 100
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
-        # [AURA FIX] Payload formatado exatamente como o Base44 espera
+        # [AURA FIX] Payload limpo: Enviamos xp_total (Aura Coins) e saldo_cristais
         return jsonify({
             "id": current_user_id,
             "nome": nome_atleta,
             "foto": dados.get("foto_perfil", ""),
-            "xp_total": xp_atual,
-            "moedas": coins,
-            "saldo_cristais": dados.get("saldo_cristais", 0),
+            "xp_total": xp_atual,         # Este valor será usado como saldo de Aura Coins 1:1
+            "saldo_cristais": cristais,    # Saldo de Cristais (XP / 10)
             "nivel": nivel_atual,
             "barra_progresso": max(0, min(100, progresso)),
             "xp_falta": max(0, range_nivel - xp_no_nivel),
@@ -113,7 +115,6 @@ def get_ranking_cla():
 @token_required
 def chat_cla(current_user_id):
     """Gerencia as mensagens do chat global do clã."""
-    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
     if mongo_db is None:
         return jsonify({"erro": "Chat temporariamente offline"}), 503
 
@@ -150,7 +151,6 @@ def comando(current_user_id):
         msg = dados.get('comando', '').strip()
         if not msg: return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
         
-        # [AURA FIX] A lógica processar_comando agora lê os campos da raiz corretamente
         resposta = processar_comando(current_user_id, msg)
         return jsonify({"resposta": resposta})
     except Exception as e:
@@ -164,7 +164,6 @@ def comando(current_user_id):
 @api_bp.route('/missoes', methods=['GET'])
 @token_required
 def listar_missoes(current_user_id):
-    # [AURA FIX] Retorna o array de missões diárias renovado ou cacheado do dia
     return jsonify({"missoes": gerar_missoes_diarias(current_user_id)})
 
 @api_bp.route('/concluir_missao', methods=['POST'])
@@ -183,12 +182,13 @@ def concluir_missao(current_user_id):
                 m["concluida"] = True
                 salvar_memoria(current_user_id, memoria)
                 
-                # Aplica XP e verifica Level Up na raiz do documento
+                # [AURA FIX] Aplica a regra unificada: XP, Moedas (1:1) e Cristais (10:1)
                 resultado = aplicar_xp(current_user_id, m.get("xp", 0))
                 return jsonify({
                     "sucesso": True, 
                     "novo_nivel": resultado["novo_nivel"],
-                    "novo_xp": resultado["novo_xp"]
+                    "novo_xp": resultado["novo_xp"],
+                    "cristais_ganhos": resultado.get("cristais_ganhos", 0)
                 })
                 
         return jsonify({"erro": "Missão inválida ou já concluída"}), 400
@@ -202,20 +202,14 @@ def concluir_missao(current_user_id):
 @api_bp.route('/sincronizar_dinamico', methods=['POST'])
 @token_required
 def sincronizar_dinamico(current_user_id):
-    # Lazy import para evitar dependência circular
     from data_sensores import obter_dados_fisiologicos
-    
-    # Busca dados no Strava/Sensores e atualiza 'status_atual'
     novos_dados = obter_dados_fisiologicos(current_user_id)
-    # Recalcula a Homeostase (Prontidão)
     calcular_e_atualizar_equilibrio(current_user_id)
-    
     return jsonify({"status": "Sincronizado", "dados": novos_dados})
 
 @api_bp.route('/feedback', methods=['GET'])
 @token_required
 def feedback(current_user_id):
-    # Retorna o texto curto para a Home do Base44
     return jsonify({"texto": gerar_feedback_emocional(current_user_id)})
 
 # ===================================================
@@ -227,5 +221,4 @@ def feedback(current_user_id):
 def criar_pagamento(current_user_id):
     dados = request.get_json(force=True)
     dados['user_id'] = current_user_id
-    # A lógica logic_asaas agora sincroniza corretamente com a coleção 'pedidos'
     return jsonify(criar_cobranca(dados))
