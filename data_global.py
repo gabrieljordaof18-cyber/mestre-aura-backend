@@ -11,7 +11,8 @@ from schema import obter_schema_padrao_global
 logger = logging.getLogger("AURA_DATA_GLOBAL")
 
 # Constantes do Banco (Coleção dedicada a configurações do sistema)
-COLECAO_CONFIGS = "configs"
+# [AURA FIX] Ajustado para garantir que a coleção exista no mestre_aura_db
+COLECAO_CONFIGS = "configs_global"
 ID_GLOBAL = "global_state"
 
 # ==============================================================
@@ -23,6 +24,7 @@ def carregar_memoria_global() -> Dict[str, Any]:
     Busca o documento único de configuração global no MongoDB.
     Se não existir, cria um novo baseado no Schema 2.0.
     """
+    # [AURA FIX] Comparação explícita com None para evitar erro de truth value no PyMongo
     if mongo_db is None:
         logger.error("❌ MongoDB não inicializado em data_global.")
         return obter_schema_padrao_global()
@@ -35,6 +37,7 @@ def carregar_memoria_global() -> Dict[str, Any]:
             logger.warning("🌍 Estado Global não encontrado. Criando novo seed...")
             novo_global = obter_schema_padrao_global()
             novo_global["_id"] = ID_GLOBAL
+            # Usamos o schema padrão e garantimos a inserção inicial
             colecao.insert_one(novo_global)
             return novo_global
             
@@ -47,7 +50,10 @@ def salvar_memoria_global(dados: Dict[str, Any]) -> bool:
     """
     Atualiza o documento global de forma segura.
     """
-    if mongo_db is None: return False
+    # [AURA FIX] Comparação explícita com None
+    if mongo_db is None: 
+        logger.error("❌ MongoDB não inicializado ao tentar salvar global.")
+        return False
     
     try:
         # Usamos ISO format para padronizar datas no MongoDB

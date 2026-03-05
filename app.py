@@ -22,8 +22,12 @@ def create_app():
     app = Flask(__name__)
     
     # 1. Segurança e CORS
-    # Essencial para o Frontend Base44 conseguir se comunicar com o Backend no Render
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    # [AURA FIX] Ajustado para garantir que o Base44 consiga enviar Authorization Headers sem bloqueio.
+    CORS(app, resources={r"/*": {
+        "origins": "*",
+        "allow_headers": ["Authorization", "Content-Type"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }})
 
     # 2. Registro de Rotas (Blueprints)
     # Organizamos com prefixos para evitar conflitos de URL
@@ -61,4 +65,5 @@ if __name__ == '__main__':
     logger.info(f"🚀 Aura OS iniciando na porta {port}...")
     
     # No seu Mac, usamos debug=True para ver as mudanças em tempo real
+    # O Render ignora o __main__, então o debug=True não afetará a produção.
     app.run(host='0.0.0.0', port=port, debug=True)

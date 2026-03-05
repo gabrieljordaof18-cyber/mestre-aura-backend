@@ -4,6 +4,7 @@ from datetime import datetime
 from bson.objectid import ObjectId # Importação vital para converter strings de ID
 
 # Importações do Data Manager (MongoDB)
+# [AURA FIX] Garantindo que as funções de banco utilizem a coleção 'usuarios' correta
 from data_manager import buscar_usuario_por_id, atualizar_usuario
 from schema import obter_schema_padrao_usuario
 
@@ -23,19 +24,27 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
         logger.warning("⚠️ Tentativa de carregar memória sem user_id.")
         return {}
 
-    # [AURA FIX] Limpeza de espaços em branco que podem vir do token/frontend
-    clean_user_id = str(user_id).strip()
+    # [AURA FIX] Limpeza rigorosa de strings. 
+    # O Base44 pode enviar o ID com caracteres de escape ou espaços invisíveis.
+    clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
 
     try:
         # Tenta carregar o usuário via Data Manager
         usuario = buscar_usuario_por_id(clean_user_id)
         
         if usuario:
-            # A conversão de _id para string garante compatibilidade com JSON/Frontend
+            # [AURA FIX] Redundância: garante que o _id seja string para o Frontend
             usuario["_id"] = str(usuario["_id"])
+            
+            # [AURA FIX] Preenchimento de campos obrigatórios para evitar erro na UI do Base44
+            # Se o campo não existe no banco, inicializamos com o valor padrão do Schema
+            if "xp_total" not in usuario: usuario["xp_total"] = 0
+            if "nivel" not in usuario: usuario["nivel"] = 1
+            if "nome" not in usuario: usuario["nome"] = "Atleta"
+            
             return usuario
         else:
-            logger.error(f"❌ Usuário {clean_user_id} não encontrado no banco.")
+            logger.error(f"❌ Usuário {clean_user_id} não encontrado no banco (Coleção: usuarios).")
             return {}
             
     except Exception as e:
@@ -52,8 +61,8 @@ def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
         return False
 
     try:
-        # [AURA FIX] Garantir ID limpo para atualização
-        clean_user_id = str(user_id).strip()
+        # [AURA FIX] Garantir ID limpo para atualização consistente no Render
+        clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
         
         # Clonamos os dados para não modificar o objeto original em memória
         dados_para_salvar = dados.copy()
@@ -65,7 +74,7 @@ def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
         # Adiciona carimbo de tempo da última modificação
         dados_para_salvar["updated_at"] = datetime.now().isoformat()
 
-        # Executa a atualização via Data Manager
+        # Executa a atualização via Data Manager (que usa a coleção 'usuarios')
         return atualizar_usuario(clean_user_id, dados_para_salvar)
         
     except Exception as e:
@@ -94,10 +103,12 @@ def redefinir_metas_usuario(user_id: str) -> bool:
         nome=memoria.get("nome", "Atleta")
     )
     
-    # Atualiza especificamente os blocos de metas e preferências
+    # [AURA FIX] Atualiza especificamente os blocos que existem no seu documento manual
     atualizacao = {
         "objetivo": "Performance Máxima",
-        "bio_performance": padrao.get("bio_performance", {})
+        "bio_performance": padrao.get("bio_performance", {}),
+        "xp_total": 0, # Opcional: define se o reset também zera o progresso
+        "nivel": 1
     }
     
     return salvar_memoria(user_id, atualizacao)
@@ -107,4 +118,5 @@ def obter_status_fisiologico(user_id: str) -> Dict[str, Any]:
     Retorna exclusivamente o bloco de dados fisiológicos (FC, Sono, Energia).
     """
     memoria = carregar_memoria(user_id)
-    return memoria.get("status_atual", {}) # Ajustado para o campo correto no seu banco
+    # [AURA FIX] Ajustado para o campo 'status_atual' que você criou no MongoDB
+    return memoria.get("status_atual", {})

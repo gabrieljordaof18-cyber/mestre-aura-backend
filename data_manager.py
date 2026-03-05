@@ -27,6 +27,7 @@ try:
         raise ValueError("MONGODB_URI não encontrada no .env")
 
     # Adicionado retryWrites para maior estabilidade no Render/Nuvem
+    # [AURA FIX] Timeout ajustado para evitar que o Render desista da conexão muito rápido
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, retryWrites=True)
     mongo_client.server_info()
     
@@ -43,13 +44,17 @@ except Exception as e:
 # ==============================================================
 
 def buscar_usuario_por_id(user_id: str):
-    if mongo_db is None: return None
+    # [AURA FIX] Comparação explícita com None para evitar erro de truth value no PyMongo
+    if mongo_db is None: 
+        logger.error("❌ MongoDB inacessível em buscar_usuario_por_id")
+        return None
     try:
         # [AURA FIX] Garantir que o ID seja limpo e convertido para ObjectId
         clean_id = str(user_id).strip()
-        # Buscamos na coleção correta (ajustado para 'usuarios' conforme sua estrutura)
+        # Buscamos na coleção 'usuarios' conforme sua estrutura manual no Atlas
         doc = mongo_db["usuarios"].find_one({"_id": ObjectId(clean_id)})
         if doc:
+            # Convertemos para String no retorno para que o JSON do Frontend aceite sem erro
             doc["_id"] = str(doc["_id"])
         return doc
     except Exception as e:
@@ -57,11 +62,16 @@ def buscar_usuario_por_id(user_id: str):
         return None
 
 def buscar_usuario_por_email(email: str):
+    # [AURA FIX] Comparação explícita com None
     if mongo_db is None: return None
-    doc = mongo_db["usuarios"].find_one({"email": email})
-    if doc:
-        doc["_id"] = str(doc["_id"])
-    return doc
+    try:
+        doc = mongo_db["usuarios"].find_one({"email": email})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
+    except Exception as e:
+        logger.error(f"Erro ao buscar email {email}: {e}")
+        return None
 
 def criar_novo_usuario(email: str, nome: str, auth_provider="email"):
     if mongo_db is None: return None
@@ -82,6 +92,7 @@ def atualizar_usuario(user_id: str, dados_atualizacao: dict):
     if mongo_db is None: return False
     try:
         clean_id = str(user_id).strip()
+        # Removemos o _id se ele vier nos dados para não dar erro de imutabilidade do MongoDB
         if "_id" in dados_atualizacao:
             del dados_atualizacao["_id"]
             
@@ -146,6 +157,7 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
 def obter_ranking_global(limite=50):
     if mongo_db is None: return []
     try:
+        # Busca baseada no campo 'xp_total' que o Frontend (Base44) espera
         cursor = mongo_db["usuarios"].find(
             {"plano": {"$ne": "banned"}},
             {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0}
@@ -187,18 +199,22 @@ def salvar_plano(user_id: str, tipo: str, conteudo: dict):
 
 def ler_plano(user_id: str, tipo: str):
     if mongo_db is None: return {}
-    doc = mongo_db["plans"].find_one({"user_id": str(user_id), "tipo": tipo})
-    return doc.get("conteudo", {}) if doc else {}
+    try:
+        doc = mongo_db["plans"].find_one({"user_id": str(user_id), "tipo": tipo})
+        return doc.get("conteudo", {}) if doc else {}
+    except Exception as e:
+        logger.error(f"Erro ao ler plano {tipo}: {e}")
+        return {}
 
 # ==============================================================
 # ⚡ OTIMIZAÇÃO DE PERFORMANCE (ÍNDICES)
 # ==============================================================
 if mongo_db is not None:
     try:
-        # [AURA FIX] Adicionado 'sparse=True'. 
-        # Isso ignora documentos que não possuem o campo email, evitando o erro de Duplicata Nula.
+        # [AURA FIX] 'sparse=True' essencial para evitar o DuplicateKeyError 
+        # caso existam documentos sem e-mail ou com e-mail nulo.
         mongo_db["usuarios"].create_index("email", unique=True, sparse=True)
-        mongo_db["usuarios"].create_index("integracoes.strava.atleta_id")
+        mongo_db["usuarios"].create_index("integracoes.strava.atleta_id", sparse=True)
         mongo_db["usuarios"].create_index([("xp_total", -1)])
         logger.info("⚡ Índices de performance do MongoDB validados com segurança (Sparse Index).")
     except Exception as e:

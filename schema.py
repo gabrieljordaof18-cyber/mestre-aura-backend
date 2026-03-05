@@ -8,91 +8,71 @@ from typing import Dict, Any
 def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[str, Any]:
     """
     Retorna a estrutura base de um novo usuário para o MongoDB.
-    Sincronizado com a lógica de Gamificação e Biohacking.
+    [AURA FIX] Ajustado para que xp, nivel e moedas fiquem na RAIZ, 
+    conforme sua estrutura manual no MongoDB Atlas e exigência do Base44.
     """
     agora_iso = datetime.now().isoformat()
     
     return {
         # --- 1. IDENTIFICAÇÃO E ACESSO ---
+        "nome": nome,
         "email": email,
         "auth_provider": "email", 
         "created_at": agora_iso,
         "updated_at": agora_iso,
-        "profile_picture_url": None,
-        "plano": "free",          # free, plus, pro
-        "cla_atual_id": None,     
+        "foto_perfil": "", # [AURA FIX] Nomeado conforme o Base44 espera
+        "plano": "free",
+        "objetivo": "Performance Máxima", # [AURA FIX] Campo raiz para a IA ler
         
-        # --- 2. PERFIL DO JOGADOR (GAMIFICAÇÃO CORE) ---
-        "jogador": {
-            "nome": nome,
-            "nivel": 1,
-            "experiencia": 0,
-            "saldo_coins": 0,      # Aura Coins (Moeda de jogo)
-            "saldo_cristais": 0,   # Cristais (Moeda Premium)
-            "avatar_frame_id": "default",
-            "titulo_atual": "Iniciado",
-            "missoes_concluidas": 0,
-            "metas": {
-                "peso_alvo": 70.0,
-                "objetivo": "saúde", 
-                "frequencia_treino": "3x"
-            },
-            "preferencias": {
-                "horario_treino": "manhã",
-                "notificacoes": True
-            }
-        },
-
-        # --- 3. DADOS FISIOLÓGICOS (MÉTRICAS DE SAÚDE) ---
-        "dados_fisiologicos": {
-            "ultima_sincronizacao": "",
-            "frequencia_cardiaca": {"valor": 0, "repouso": 0},
-            "hrv": {"valor": 0, "status": "sem_dados"},
-            "sono": {"horas": 0.0, "qualidade": "desconhecida"},
-            "energia": {"nivel": 100, "status": "estavel"},
+        # --- 2. PROGRESSÃO (CAMPOS NA RAIZ PARA SINCRONIZAÇÃO ATLAS) ---
+        # [AURA FIX] Removido o objeto 'jogador' para evitar conflito de busca
+        "nivel": 1,
+        "xp_total": 0,         # [AURA FIX] Nomeado conforme sua inserção manual
+        "moedas": 0,           # [AURA FIX] Sincronizado com o cabeçalho do app
+        "saldo_cristais": 0,   # Moeda Premium
+        "titulo_atual": "Iniciado",
+        
+        # --- 3. STATUS ATUAL (BIO-MÉTRICAS) ---
+        # [AURA FIX] Nomeado 'status_atual' para harmonia com o seu Atlas
+        "status_atual": {
+            "ultima_sincronizacao": agora_iso,
+            "fadiga": 0,
+            "recuperacao": 100,
+            "prontidao": 100,
             "passos_hoje": 0,
-            "calorias_hoje": 0
+            "fc_repouso": 0,
+            "hrv_valor": 0,
+            "sono_horas": 0.0
         },
 
-        # --- 4. AFINIDADE COM A IA (MESTRE DA AURA) ---
-        "afinidade_ia": {
-            "score": 50,          
-            "nivel": "neutro",    # hostil, neutro, aliado, devoto
-            "humor_atual": "focado",
-            "ultima_interacao": ""
-        },
-
-        # --- 5. HOMEOSTASE (SAÚDE SISTÊMICA) ---
+        # --- 4. HOMEOSTASE (SAÚDE SISTÊMICA) ---
         "homeostase": {
-            "score": 50,
-            "estado": "Aguardando dados...",
-            "componentes": {"corpo": 50, "mente": 50, "energia": 50},
-            "ultima_analise": ""
+            "score": 100,
+            "estado": "Plena Harmonia 🌟",
+            "componentes": {"corpo": 100, "mente": 100, "energia": 100},
+            "ultima_analise": agora_iso
         },
 
-        # --- 6. PROGRESSÃO DIÁRIA ---
+        # --- 5. GAMIFICAÇÃO ---
         "gamificacao": {
-            "xp_acumulado_hoje": 0,
             "missoes_ativas": [],       
-            "missoes_concluidas_hoje": [],
-            "ultima_geracao_missoes": ""
+            "ultima_geracao_missoes": agora_iso
         },
 
-        # --- 7. INTEGRAÇÕES ---
+        # --- 6. INTEGRAÇÕES ---
         "integracoes": {
             "strava": {
                 "conectado": False,
                 "atleta_id": None,
                 "tokens": {} 
             },
-            "apple_health": {"conectado": False},
-            "garmin": {"conectado": False}
+            "apple_health": {"conectado": False}
         },
         
-        # --- 8. SISTEMA ---
+        # --- 7. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
-            "versao_schema": "2.0"
+            "versao_schema": "2.0.1"
         }
     }
 
@@ -123,11 +103,8 @@ def obter_schema_padrao_produto() -> Dict[str, Any]:
         "id": "",
         "nome": "",
         "marca": "",
-        "preco_cheio": 0.0,
-        "desconto_percentual": 0,
         "preco_final": 0.0,
-        "custo_aura_coins": 0,
-        "cashback_cristais": 0,
+        "custo_moedas": 0, # [AURA FIX] Sincronizado com o campo 'moedas'
         "nivel_minimo": 1,
         "imagem_url": "",
         "categoria": "suplementos",

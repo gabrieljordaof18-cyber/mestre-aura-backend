@@ -1,25 +1,46 @@
 {
     "configuracoes_sistema": {
-        "versao_schema": "2.0",
-        "ambiente": "desenvolvimento",
-        "last_local_sync": "2026-03-03"
+        "versao_schema": "2.0.1",
+        "ambiente": "producao",
+        "last_sync_atlas": "2026-03-05"
     },
     "template_usuario_novo": {
-        "jogador": {
-            "nome": "Atleta",
-            "nivel": 1,
-            "experiencia": 0,
-            "saldo_coins": 0,
-            "saldo_cristais": 0
+        "nome": "Atleta Aura",
+        "email": "",
+        "nivel": 1,
+        "xp_total": 0,
+        "moedas": 0,
+        "saldo_cristais": 0,
+        "objetivo": "Performance Máxima",
+        "foto_perfil": "",
+        "status_atual": {
+            "fadiga": 0,
+            "recuperacao": 100,
+            "prontidao": 100,
+            "ultima_sincronizacao": ""
         },
         "homeostase": {
-            "score": 50,
-            "estado": "Iniciando Análise...",
-            "componentes": {"corpo": 50, "mente": 50, "energia": 50}
+            "score": 100,
+            "estado": "Plena Harmonia 🌟",
+            "componentes": {
+                "corpo": 100, 
+                "mente": 100, 
+                "energia": 100
+            },
+            "ultima_analise": ""
         },
         "gamificacao": {
             "missoes_ativas": [],
             "ultima_geracao_missoes": ""
-        }
+        },
+        "integracoes": {
+            "strava": {
+                "conectado": false,
+                "atleta_id": "",
+                "tokens": {}
+            }
+        },
+        "created_at": "",
+        "updated_at": ""
     }
 }

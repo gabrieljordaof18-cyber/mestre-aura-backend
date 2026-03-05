@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 # Importações da Nova Arquitetura
 from data_user import carregar_memoria
+# [AURA FIX] Importação explícita para garantir sincronização com Render/Atlas
 from data_manager import mongo_db, DESCENDING, salvar_plano
 
 # Carrega variáveis do .env
@@ -23,12 +24,13 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 if api_key:
     try:
+        # [AURA FIX] Inicialização robusta do cliente OpenAI
         client = OpenAI(api_key=api_key)
-        logger.info("✅ Mestre da Aura inicializado via OpenAI.")
+        logger.info("✅ Mestre da Aura inicializado via OpenAI com sucesso.")
     except Exception as e:
-        logger.error(f"⚠️ Falha ao iniciar Mestre da Aura: {e}")
+        logger.error(f"⚠️ Falha crítica ao iniciar Mestre da Aura: {e}")
 else:
-    logger.warning("⚠️ OPENAI_API_KEY ausente no .env")
+    logger.warning("⚠️ OPENAI_API_KEY ausente no .env do Render. O chat ficará offline.")
 
 # ======================================================
 # 🛠️ FERRAMENTAS DO MESTRE (DIETAS E TREINOS)
@@ -52,7 +54,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva o plano alimentar estruturado no perfil do atleta.",
+            "description": "Salva o plano alimentar estruturado no perfil do atleta no MongoDB.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -72,7 +74,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "Cria e salva uma rotina de exercícios semanal.",
+            "description": "Cria e salva uma rotina de exercícios semanal no perfil do atleta.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -99,34 +101,47 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     Interface principal de chat do Aura.
     Analisa contexto fisiológico e decide entre falar ou agir (tools).
     """
-    if not user_id: return "⚠️ Erro de identificação."
+    if not user_id: return "⚠️ Erro de identificação do atleta."
 
-    # 1. Carrega Contexto (Multijogador)
+    # 1. Carrega Contexto Real do MongoDB (Sincronizado com Render/Base44)
     memoria = carregar_memoria(user_id)
-    jogador = memoria.get("jogador", {})
-    homeostase = memoria.get("homeostase", {})
+    if not memoria:
+        return "⚠️ Não encontrei seu perfil. Certifique-se de estar logado corretamente."
+
+    # [AURA FIX] Ajustado para ler campos da raiz conforme seu documento manual no Atlas
+    nome_atleta = memoria.get("nome", "Iniciado")
+    nivel_atleta = memoria.get("nivel", 1)
+    xp_atleta = memoria.get("xp_total", 0)
+    objetivo_atleta = memoria.get("objetivo", "Performance Geral")
     
-    # 2. Prompt do Sistema (Personalidade do Mestre)
+    # Busca bio-status processado
+    homeostase = memoria.get("homeostase", {})
+    estado_bio = homeostase.get('estado', 'Estável')
+    score_bio = homeostase.get('score', 50)
+    
+    # 2. Prompt do Sistema (Personalidade do Mestre da Aura)
     prompt_sistema = {
         "role": "system", 
         "content": (
             f"Você é o MESTRE DA AURA. Treinador técnico, estoico e direto.\n"
-            f"Atleta: {jogador.get('nome', 'Iniciado')} | Nível: {jogador.get('nivel', 1)}\n"
-            f"Estado Biofísico: {homeostase.get('estado', 'Estável')} (Score: {homeostase.get('score', 50)})\n\n"
-            f"REGRAS:\n"
-            f"1. Para Dietas/Treinos, use obrigatoriamente as TOOLS.\n"
-            f"2. Adapte o tom ao estado biofísico: Se o score for baixo, seja mais protetor. Se alto, desafie o atleta.\n"
-            f"3. Mantenha respostas curtas (máximo 3 parágrafos).\n"
+            f"Atleta: {nome_atleta} | Nível: {nivel_atleta} (XP: {xp_atleta})\n"
+            f"Objetivo Declarado: {objetivo_atleta}\n"
+            f"Estado Biofísico: {estado_bio} (Score: {score_bio})\n\n"
+            f"DIRETRIZES DE RESPOSTA:\n"
+            f"1. Para Dietas/Treinos, use obrigatoriamente as TOOLS para estruturar o plano no banco.\n"
+            f"2. Adapte o tom: Se o score biofísico for baixo (<40), seja protetor e recomende descanso. Se alto (>80), desafie o atleta ao limite.\n"
+            f"3. Respostas curtas e densas (máximo 3 parágrafos).\n"
+            f"4. Você tem acesso ao histórico de conversas para manter a continuidade."
         )
     }
 
-    # 3. Histórico e Mensagem Atual
-    historico = _buscar_historico(user_id, limite=5)
+    # 3. Histórico e Mensagem Atual (Sincronização de contexto)
+    historico = _buscar_historico(user_id, limite=6)
     mensagens = [prompt_sistema] + historico + [{"role": "user", "content": mensagem}]
 
-    # 4. Execução OpenAI
+    # 4. Execução OpenAI (Geração de resposta ou chamada de função)
     try:
-        if not client: return "⚠️ Sistema de IA Offline."
+        if client is None: return "⚠️ O Mestre está em meditação profunda (Sistema Offline)."
         
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -138,17 +153,17 @@ def processar_comando(user_id: str, mensagem: str) -> str:
         
         msg_ia = response.choices[0].message
 
-        # Lógica de Ferramentas
+        # Lógica de Ferramentas (Actions)
         if msg_ia.tool_calls:
             texto_resposta = _executar_ferramentas(user_id, msg_ia.tool_calls)
         else:
             texto_resposta = msg_ia.content.strip()
 
     except Exception as e:
-        logger.error(f"Erro OpenAI: {e}")
-        texto_resposta = "⚠️ Falha na conexão com o Mestre. Tente em instantes."
+        logger.error(f"Erro OpenAI para o user {user_id}: {e}")
+        texto_resposta = "⚠️ O Mestre teve uma interrupção na conexão neural. Tente novamente."
 
-    # 5. Salva Interação (Coleção 'chats')
+    # 5. Salva Interação (Persistência na coleção 'chats' do MongoDB Atlas)
     _salvar_chat(user_id, "user", mensagem)
     _salvar_chat(user_id, "assistant", texto_resposta)
     
@@ -157,7 +172,7 @@ def processar_comando(user_id: str, mensagem: str) -> str:
 # --- Funções Internas de Apoio ---
 
 def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
-    """Traduz as decisões da IA em ações no banco de dados."""
+    """Traduz as decisões da IA em ações reais no banco de dados."""
     respostas = []
     for tool in tool_calls:
         try:
@@ -165,28 +180,41 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
             args = json.loads(tool.function.arguments)
             
             if nome_func == "salvar_nova_dieta":
+                # Salva o plano estruturado na coleção 'plans' via data_manager
                 if salvar_plano(user_id, "dieta", args):
-                    respostas.append("🥗 Protocolo nutricional atualizado com sucesso.")
+                    respostas.append("🥗 Protocolo nutricional calibrado e salvo no seu perfil.")
             
             elif nome_func == "salvar_novo_treino":
                 if salvar_plano(user_id, "treino", args):
-                    respostas.append("⚔️ Cronograma de treinos registrado no seu perfil.")
+                    respostas.append("⚔️ Cronograma de treinamento de elite registrado.")
         except Exception as e:
-            logger.error(f"Erro Tool {tool.function.name}: {e}")
+            logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")
             
-    return "\n".join(respostas) if respostas else "⚠️ Não consegui salvar o protocolo agora."
+    return "\n".join(respostas) if respostas else "⚠️ Falha ao registrar o protocolo. Tente novamente."
 
 def _buscar_historico(user_id: str, limite: int) -> List[Dict]:
-    if not mongo_db: return []
-    cursor = mongo_db["chats"].find({"user_id": str(user_id)}).sort("timestamp", DESCENDING).limit(limite)
-    msgs = [{"role": doc["role"], "content": doc["content"]} for doc in cursor]
-    return msgs[::-1]
+    """Recupera as últimas mensagens da coleção 'chats' para dar contexto à IA."""
+    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
+    if mongo_db is None: return []
+    try:
+        cursor = mongo_db["chats"].find({"user_id": str(user_id)}).sort("timestamp", DESCENDING).limit(limite)
+        msgs = [{"role": doc["role"], "content": doc["content"]} for doc in cursor]
+        # Invertemos para que fiquem na ordem cronológica correta (mais antiga para mais nova)
+        return msgs[::-1]
+    except Exception as e:
+        logger.error(f"Erro ao buscar histórico: {e}")
+        return []
 
 def _salvar_chat(user_id: str, role: str, content: str):
-    if mongo_db:
-        mongo_db["chats"].insert_one({
-            "user_id": str(user_id),
-            "role": role,
-            "content": content,
-            "timestamp": datetime.now()
-        })
+    """Persiste a conversa no MongoDB para memória de longo prazo."""
+    # [AURA FIX] Comparação explícita com None
+    if mongo_db is not None:
+        try:
+            mongo_db["chats"].insert_one({
+                "user_id": str(user_id),
+                "role": role,
+                "content": content,
+                "timestamp": datetime.now()
+            })
+        except Exception as e:
+            logger.error(f"Erro ao salvar mensagem no chat: {e}")

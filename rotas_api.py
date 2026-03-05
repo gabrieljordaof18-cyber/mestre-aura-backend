@@ -32,6 +32,7 @@ def token_required(f):
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
+                # O Base44 costuma enviar "Bearer ID_DO_USUARIO"
                 token = auth_header.split(" ")[1]
             except IndexError:
                 return jsonify({"erro": "Token mal formatado"}), 401
@@ -40,11 +41,11 @@ def token_required(f):
             return jsonify({"erro": "Token ausente"}), 401
 
         try:
-            # [AURA FIX] Limpeza do ID para evitar erros de busca no MongoDB
-            current_user_id = str(token).strip() 
+            # [AURA FIX] Limpeza rigorosa para garantir que o ID chegue limpo ao MongoDB
+            current_user_id = str(token).strip().replace('"', '').replace("'", "")
         except Exception as e:
             logger.error(f"Erro de auth: {e}")
-            return jsonify({"erro": "Sessão expirada"}), 401
+            return jsonify({"erro": "Sessão inválida"}), 401
 
         return f(current_user_id, *args, **kwargs)
     return decorated
@@ -59,13 +60,13 @@ def get_status_jogador(current_user_id):
     try:
         dados = carregar_memoria(current_user_id)
         if not dados: 
-            return jsonify({"erro": "Perfil não encontrado no banco"}), 404
+            return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
-        # [AURA FIX] Mapeamento direto com os campos do seu MongoDB atual
-        # Antes o código buscava dados.get("jogador"), que não existe na sua nova estrutura
-        xp_atual = dados.get("xp_total", 0)
-        nivel_atual = dados.get("nivel", 1)
-        nome_atleta = dados.get("nome", "Atleta")
+        # [AURA FIX] Sincronização direta com a RAIZ do seu MongoDB
+        xp_atual = int(dados.get("xp_total", 0))
+        nivel_atual = int(dados.get("nivel", 1))
+        nome_atleta = dados.get("nome", "Atleta Aura")
+        # [AURA FIX] Mapeado para 'moedas' conforme seu JSON manual do Atlas
         coins = dados.get("moedas", 0)
         
         # Lógica de Barra de Progresso (Calculada no Backend para evitar bugs na UI)
@@ -75,22 +76,25 @@ def get_status_jogador(current_user_id):
         range_nivel = xp_prox - xp_anterior
         xp_no_nivel = xp_atual - xp_anterior
         
-        # Garantir que o progresso não quebre se os dados estiverem inconsistentes
+        # Garantir que o progresso seja um inteiro entre 0 e 100
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
+        # [AURA FIX] Payload formatado exatamente como o Base44 espera
         return jsonify({
+            "id": current_user_id,
             "nome": nome_atleta,
             "foto": dados.get("foto_perfil", ""),
             "xp_total": xp_atual,
-            "aura_coins": coins,
-            "saldo_cristais": dados.get("saldo_cristais", 0), # Campo opcional
+            "moedas": coins,
+            "saldo_cristais": dados.get("saldo_cristais", 0),
             "nivel": nivel_atual,
-            "barra_progresso": max(0, min(100, progresso)), # Garante valor entre 0-100
-            "xp_falta": max(0, range_nivel - xp_no_nivel)
+            "barra_progresso": max(0, min(100, progresso)),
+            "xp_falta": max(0, range_nivel - xp_no_nivel),
+            "objetivo": dados.get("objetivo", "Performance")
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
-        return jsonify({"erro": "Erro ao carregar perfil"}), 500
+        return jsonify({"erro": "Falha ao sincronizar perfil"}), 500
 
 # ===================================================
 # ⚔️ CLÃS E RANKING (SOCIAL)
@@ -102,26 +106,37 @@ def get_ranking_cla():
         ranking = obter_ranking_global(limite=50) 
         return jsonify({"ranking": ranking})
     except Exception as e:
+        logger.error(f"Erro ao buscar ranking: {e}")
         return jsonify({"ranking": []})
 
 @api_bp.route('/cla/chat', methods=['GET', 'POST'])
 @token_required
 def chat_cla(current_user_id):
     """Gerencia as mensagens do chat global do clã."""
+    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
+    if mongo_db is None:
+        return jsonify({"erro": "Chat temporariamente offline"}), 503
+
     if request.method == 'GET':
-        cursor = mongo_db["chat_messages"].find().sort("timestamp", -1).limit(50)
-        msgs = [{"user": d.get("nome"), "msg": d.get("content"), "time": d.get("timestamp")} for d in cursor]
-        return jsonify(msgs[::-1])
+        try:
+            cursor = mongo_db["chat_messages"].find().sort("timestamp", -1).limit(50)
+            msgs = [{"user": d.get("nome"), "msg": d.get("content"), "time": d.get("timestamp")} for d in cursor]
+            return jsonify(msgs[::-1])
+        except Exception as e:
+            return jsonify([])
 
     if request.method == 'POST':
-        dados = request.get_json(force=True)
-        mongo_db["chat_messages"].insert_one({
-            "user_id": current_user_id,
-            "nome": dados.get("nome", "Atleta"),
-            "content": dados.get("mensagem"),
-            "timestamp": datetime.now().isoformat()
-        })
-        return jsonify({"sucesso": True})
+        try:
+            dados = request.get_json(force=True)
+            mongo_db["chat_messages"].insert_one({
+                "user_id": current_user_id,
+                "nome": dados.get("nome", "Atleta"),
+                "content": dados.get("mensagem"),
+                "timestamp": datetime.now().isoformat()
+            })
+            return jsonify({"sucesso": True})
+        except Exception as e:
+            return jsonify({"erro": "Falha ao enviar mensagem"}), 500
 
 # ===================================================
 # 🧠 COMANDO DO MESTRE (IA)
@@ -133,13 +148,14 @@ def comando(current_user_id):
     try:
         dados = request.get_json(force=True) 
         msg = dados.get('comando', '').strip()
-        if not msg: return jsonify({"resposta": "Diga-me, o que busca hoje?"})
+        if not msg: return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
         
+        # [AURA FIX] A lógica processar_comando agora lê os campos da raiz corretamente
         resposta = processar_comando(current_user_id, msg)
         return jsonify({"resposta": resposta})
     except Exception as e:
         logger.error(f"Erro no comando IA para {current_user_id}: {e}")
-        return jsonify({"resposta": "⚠️ O Mestre está meditando. Tente novamente."})
+        return jsonify({"resposta": "⚠️ O Mestre está meditando em silêncio. Tente novamente."})
 
 # ===================================================
 # 🎮 MISSÕES E GAMIFICAÇÃO
@@ -148,27 +164,36 @@ def comando(current_user_id):
 @api_bp.route('/missoes', methods=['GET'])
 @token_required
 def listar_missoes(current_user_id):
+    # [AURA FIX] Retorna o array de missões diárias renovado ou cacheado do dia
     return jsonify({"missoes": gerar_missoes_diarias(current_user_id)})
 
 @api_bp.route('/concluir_missao', methods=['POST'])
 @token_required
 def concluir_missao(current_user_id):
-    dados = request.get_json(force=True)
-    missao_id = dados.get("id")
-    
-    memoria = carregar_memoria(current_user_id)
-    # [AURA FIX] Ajuste para buscar missões na estrutura simplificada se necessário
-    gamificacao = memoria.get("gamificacao", {})
-    missoes = gamificacao.get("missoes_ativas", [])
-    
-    for m in missoes:
-        if m["id"] == missao_id and not m.get("concluida"):
-            m["concluida"] = True
-            salvar_memoria(current_user_id, memoria)
-            resultado = aplicar_xp(current_user_id, m.get("xp", 0))
-            return jsonify({"sucesso": True, "novo_nivel": resultado["novo_nivel"]})
-            
-    return jsonify({"erro": "Missão inválida ou já concluída"}), 400
+    try:
+        dados = request.get_json(force=True)
+        missao_id = dados.get("id")
+        
+        memoria = carregar_memoria(current_user_id)
+        gamificacao = memoria.get("gamificacao", {})
+        missoes = gamificacao.get("missoes_ativas", [])
+        
+        for m in missoes:
+            if m["id"] == missao_id and not m.get("concluida"):
+                m["concluida"] = True
+                salvar_memoria(current_user_id, memoria)
+                
+                # Aplica XP e verifica Level Up na raiz do documento
+                resultado = aplicar_xp(current_user_id, m.get("xp", 0))
+                return jsonify({
+                    "sucesso": True, 
+                    "novo_nivel": resultado["novo_nivel"],
+                    "novo_xp": resultado["novo_xp"]
+                })
+                
+        return jsonify({"erro": "Missão inválida ou já concluída"}), 400
+    except Exception as e:
+        return jsonify({"erro": "Falha ao concluir missão"}), 500
 
 # ===================================================
 # ⚕️ BIOHACKING E SINCRONIZAÇÃO
@@ -177,14 +202,20 @@ def concluir_missao(current_user_id):
 @api_bp.route('/sincronizar_dinamico', methods=['POST'])
 @token_required
 def sincronizar_dinamico(current_user_id):
+    # Lazy import para evitar dependência circular
     from data_sensores import obter_dados_fisiologicos
+    
+    # Busca dados no Strava/Sensores e atualiza 'status_atual'
     novos_dados = obter_dados_fisiologicos(current_user_id)
+    # Recalcula a Homeostase (Prontidão)
     calcular_e_atualizar_equilibrio(current_user_id)
+    
     return jsonify({"status": "Sincronizado", "dados": novos_dados})
 
 @api_bp.route('/feedback', methods=['GET'])
 @token_required
 def feedback(current_user_id):
+    # Retorna o texto curto para a Home do Base44
     return jsonify({"texto": gerar_feedback_emocional(current_user_id)})
 
 # ===================================================
@@ -196,4 +227,5 @@ def feedback(current_user_id):
 def criar_pagamento(current_user_id):
     dados = request.get_json(force=True)
     dados['user_id'] = current_user_id
+    # A lógica logic_asaas agora sincroniza corretamente com a coleção 'pedidos'
     return jsonify(criar_cobranca(dados))
