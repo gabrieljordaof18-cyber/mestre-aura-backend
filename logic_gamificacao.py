@@ -11,18 +11,19 @@ from data_manager import mongo_db
 logger = logging.getLogger("AURA_GAMIFICACAO")
 
 # ======================================================
-# ⚙️ CONSTANTES DE JOGO (BALANCEAMENTO)
+# ⚙️ CONSTANTES DE JOGO (BALANCEAMENTO 3.0)
 # ======================================================
 XP_BASE_NIVEL = 1000        # Custo base para subir de nível
 
-# [AURA INFO] Bônus por sensores (também seguirão a regra 1:1)
-XP_SONO_OTIMO = 50          
-XP_SONO_BOM = 30            
-XP_TREINO_INSANO = 100      
+# [AURA ROBUST] Bônus escalonados para o novo fluxo de 10 exercícios
+XP_SONO_OTIMO = 60          
+XP_SONO_BOM = 35            
+XP_TREINO_INSANO = 150      # Para treinos de 10 exercícios ou alta intensidade Strava
+XP_TREINO_COMPLEXO = 80     # Para treinos entre 5 e 8 exercícios
 XP_TREINO_BOM = 50          
 
 # Economia Premium (Bônus extra ao subir de nível)
-CRISTAIS_POR_LEVEL_UP = 20  
+CRISTAIS_POR_LEVEL_UP = 25  
 
 # ======================================================
 # 🎮 NÚCLEO DE GAMIFICAÇÃO (LEVELS E MISSÕES)
@@ -32,6 +33,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     """
     Gera ou recupera as 3 missões diárias do usuário.
     Sincronizado com a coleção 'missoes' do MongoDB Atlas.
+    Agora inclui desafios para o fluxo de treinos híbridos.
     """
     if not user_id: return []
 
@@ -44,6 +46,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     ultima_geracao = str(gamificacao.get("ultima_geracao_missoes", "")).split("T")[0]
     missoes_atuais = gamificacao.get("missoes_ativas", [])
 
+    # Se já gerou missões hoje, retorna as mesmas para manter consistência
     if ultima_geracao == hoje_str and missoes_atuais:
         return missoes_atuais
 
@@ -55,13 +58,17 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"❌ Erro ao acessar coleção 'missoes': {e}")
 
+    # Fallback caso a coleção esteja vazia (Inclui missões híbridas)
     if not pool_missoes:
         pool_missoes = [
-            {"id": "m_h2o", "titulo": "Hidratação", "descricao": "Beber 2L de água", "xp": 100, "categoria": "saude", "icone": "Zap"},
-            {"id": "m_mov", "titulo": "Movimento", "descricao": "Caminhada de 20 min", "xp": 100, "categoria": "treino", "icone": "Rocket"}
+            {"id": "m_h2o", "titulo": "Hidratação", "descricao": "Beber 3L de água", "xp": 100, "categoria": "saude", "icone": "Zap"},
+            {"id": "m_hybrid", "titulo": "Foco Híbrido", "descricao": "Musculação + 10min Cardio", "xp": 150, "categoria": "treino", "icone": "Flame"},
+            {"id": "m_mov", "titulo": "Consistência", "descricao": "Bater 10.000 passos", "xp": 100, "categoria": "treino", "icone": "Rocket"},
+            {"id": "m_sono", "titulo": "Repouso Mestre", "descricao": "Dormir antes das 23h", "xp": 120, "categoria": "saude", "icone": "Moon"}
         ]
 
     try:
+        # Seleção aleatória de 3 desafios únicos
         selecionadas = random.sample(pool_missoes, min(3, len(pool_missoes)))
     except ValueError:
         selecionadas = pool_missoes
@@ -70,7 +77,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     for m in selecionadas:
         missoes_ativas.append({
             "id": m.get("id"),
-            "titulo": m.get("titulo", "Desafio"),
+            "titulo": m.get("titulo", "Desafio Aura"),
             "descricao": m.get("descricao"),
             "xp": m.get("xp", 100),
             "categoria": m.get("categoria", "geral"),
@@ -79,6 +86,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
             "data_geracao": hoje_str
         })
 
+    # Atualiza a memória local antes de salvar no Atlas
     if "gamificacao" not in memoria: 
         memoria["gamificacao"] = {}
     
@@ -86,30 +94,30 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     memoria["gamificacao"]["ultima_geracao_missoes"] = datetime.now().isoformat()
     
     salvar_memoria(user_id, memoria)
-    logger.info(f"🎲 Ciclo de missões renovado no Atlas para {user_id}")
+    logger.info(f"🎲 [GAMIFICAÇÃO] Ciclo de missões renovado para {user_id}")
     
     return missoes_ativas
 
 def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     """
     Adiciona XP e gerencia a progressão econômica Aura.
-    LÓGICA: 
-    - Aura Coins = XP Ganhos (1:1)
+    LÓGICA UNIFICADA: 
+    - Moedas = XP Ganhos (1:1)
     - Cristais = XP Ganhos / 10
+    - Bônus de Level Up incluído.
     """
     if not user_id: return {"erro": "ID ausente"}
 
     memoria = carregar_memoria(user_id)
     if not memoria: return {"erro": "Perfil não carregado"}
 
-    # [AURA FIX] Captura de saldos na raiz (XP, Moedas, Cristais)
+    # Captura de saldos na raiz (XP, Moedas, Cristais)
     xp_atual = int(memoria.get("xp_total", 0))
     nivel_atual = int(memoria.get("nivel", 1))
-    # 'moedas' representa suas Aura Coins Oficiais (os 18.800)
     moedas_atuais = int(memoria.get("moedas", 0))
     cristais_atuais = int(memoria.get("saldo_cristais", 0))
 
-    # --- APLICAÇÃO DA REGRA DE NEGÓCIO ---
+    # Aplicação da conversão econômica oficial
     ganho_moedas = quantidade
     ganho_cristais = int(quantidade / 10)
 
@@ -120,23 +128,27 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     subiu_nivel = False
     bonus_level_up_cristais = 0
     
-    # Lógica de Progressão de Nível
+    # Lógica de Progressão de Nível (Exponencial Simples)
     while xp_atual >= (XP_BASE_NIVEL * nivel_atual):
         xp_atual -= (XP_BASE_NIVEL * nivel_atual)
         nivel_atual += 1
         bonus_level_up_cristais += CRISTAIS_POR_LEVEL_UP
         subiu_nivel = True
-        logger.info(f"🆙 LEVEL UP: {user_id} atingiu o Nível {nivel_atual}")
+        logger.info(f"🆙 [LEVEL UP] {user_id} atingiu o Nível {nivel_atual}")
 
-    # Atualiza o saldo final com bônus de nível se houver
+    # Atualiza o saldo final com bônus de nível
     cristais_atuais += bonus_level_up_cristais
 
-    # [AURA FIX] Persistência direta na RAIZ para sincronia total com Atlas e Base44
+    # Persistência na RAIZ do documento do Atlas para sincronia com Base44
     memoria["xp_total"] = xp_atual
     memoria["nivel"] = nivel_atual
     memoria["moedas"] = moedas_atuais
     memoria["saldo_cristais"] = cristais_atuais
     
+    # Atualiza estatísticas de performance para o perfil
+    if "gamificacao" in memoria and "estatisticas" in memoria["gamificacao"]:
+        memoria["gamificacao"]["estatisticas"]["total_atividades"] += 1
+
     salvar_memoria(user_id, memoria)
     
     return {
@@ -152,26 +164,24 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
 # ======================================================
 
 def calcular_xp_fisiologico(dados_fisiologicos: Dict[str, Any]) -> int:
-    """Traduz dados de saúde em experiência e economia."""
+    """Traduz dados de biometria em economia ativa."""
     xp_ganho = 0
     
-    sono = _extrair(dados_fisiologicos, "sono_horas", "")
-    passos = _extrair(dados_fisiologicos, "passos_hoje", "") 
+    # Extração robusta dos campos unificados do Atlas
+    sono = float(dados_fisiologicos.get("sono_horas", 0))
+    passos = int(dados_fisiologicos.get("passos_hoje", 0))
+    fadiga = int(dados_fisiologicos.get("fadiga", 0))
 
-    if sono >= 7: xp_ganho += XP_SONO_OTIMO
-    elif sono >= 6: xp_ganho += XP_SONO_BOM
+    # Recompensa por Sono de Qualidade
+    if sono >= 7.5: xp_ganho += XP_SONO_OTIMO
+    elif sono >= 6.5: xp_ganho += XP_SONO_BOM
 
-    if passos >= 10000: xp_ganho += 50
-    elif passos >= 5000: xp_ganho += 20
+    # Recompensa por Movimentação Diária
+    if passos >= 12000: xp_ganho += 70
+    elif passos >= 8000: xp_ganho += 40
+    
+    # Bônus por consistência em dias de fadiga controlada
+    if fadiga < 30 and passos > 5000:
+        xp_ganho += 20
 
     return xp_ganho
-
-def _extrair(dados: dict, chave: str, sub: str) -> float:
-    if not dados: return 0.0
-    raw = dados.get(chave, 0)
-    if isinstance(raw, dict) and sub:
-        return float(raw.get(sub, 0))
-    try: 
-        return float(raw)
-    except (ValueError, TypeError): 
-        return 0.0

@@ -33,18 +33,20 @@ else:
     logger.warning("⚠️ OPENAI_API_KEY ausente no .env do Render. O chat ficará offline.")
 
 # ======================================================
-# 🛠️ FERRAMENTAS DO MESTRE (DIETAS E TREINOS)
+# 🛠️ FERRAMENTAS DO MESTRE (DIETAS E TREINOS ROBUSTOS)
 # ======================================================
 
 SCHEMA_EXERCICIO = {
     "type": "object",
     "properties": {
-        "exercicio": {"type": "string", "description": "Ex: Supino Reto"},
-        "tipo": {"type": "string", "enum": ["forca", "cardio"]},
-        "periodo": {"type": "string", "enum": ["unico", "manha", "tarde"]},
-        "series": {"type": "string"},
-        "reps": {"type": "string"},
-        "detalhes": {"type": "string"}
+        "exercicio": {"type": "string", "description": "Nome do exercício ou atividade (Ex: Supino Reto, Corrida na Esteira, Natação)"},
+        "tipo": {"type": "string", "enum": ["forca", "cardio", "endurance", "flexibilidade"]},
+        "periodo": {"type": "string", "enum": ["unico", "manha", "tarde", "noite"]},
+        "series": {"type": "string", "description": "Número de séries (Ex: 4)"},
+        "reps": {"type": "string", "description": "Repetições ou tempo (Ex: 10-12 ou 45 seg)"},
+        "distancia": {"type": "string", "description": "Para cardios (Ex: 5, 500, 2.5)"},
+        "unidade": {"type": "string", "enum": ["km", "m", "min", "reps"], "description": "Unidade da distância ou volume"},
+        "detalhes": {"type": "string", "description": "Dicas técnicas, cadência ou carga sugerida"}
     },
     "required": ["exercicio", "tipo", "periodo"]
 }
@@ -54,7 +56,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "ESTRUTURA e SALVA um plano alimentar completo no banco de dados. Use sempre que o usuário pedir para montar, sugerir ou alterar uma dieta.",
+            "description": "ESTRUTURA e SALVA um plano alimentar detalhado. Use sempre que o usuário pedir orientações nutricionais.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -74,19 +76,21 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "ESTRUTURA e SALVA uma rotina de exercícios semanal no banco de dados. Use sempre que o usuário pedir para montar, sugerir ou organizar um treino.",
+            "description": "CRIA um cronograma SEMANAL ROBUSTO. DEVE conter de 5 a 10 itens por dia de treino. Deve integrar Musculação com os esportes favoritos do atleta (Corrida, Ciclismo, etc).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "foco_atual": {"type": "string"},
+                    "foco_atual": {"type": "string", "description": "Ex: Hipertrofia com foco em Endurance"},
+                    "dicas_tecnicas": {"type": "string", "description": "Conselhos gerais para a semana"},
                     "segunda": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "terca": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "quarta": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "quinta": {"type": "array", "items": SCHEMA_EXERCICIO},
                     "sexta": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "sabado": {"type": "array", "items": SCHEMA_EXERCICIO}
+                    "sabado": {"type": "array", "items": SCHEMA_EXERCICIO},
+                    "domingo": {"type": "array", "items": SCHEMA_EXERCICIO}
                 },
-                "required": ["foco_atual", "segunda", "terca", "quarta"]
+                "required": ["foco_atual", "segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
             }
         }
     }
@@ -108,39 +112,40 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     if not memoria:
         return "⚠️ Não encontrei seu perfil. Certifique-se de estar logado corretamente."
 
-    # [AURA FIX] Ajustado para ler campos da raiz conforme seu documento manual no Atlas
+    # Mapeamento de dados do Perfil
     nome_atleta = memoria.get("nome", "Iniciado")
     nivel_atleta = memoria.get("nivel", 1)
     xp_atleta = memoria.get("xp_total", 0)
     objetivo_atleta = memoria.get("objetivo", "Performance Geral")
+    esportes_atleta = memoria.get("esportes_favoritos", ["Musculação"])
     
     # Busca bio-status processado
     homeostase = memoria.get("homeostase", {})
     estado_bio = homeostase.get('estado', 'Estável')
     score_bio = homeostase.get('score', 50)
     
-    # 2. Prompt do Sistema (Personalidade do Mestre da Aura)
+    # 2. Prompt do Sistema (Personalidade Evoluída do Mestre da Aura)
     prompt_sistema = {
         "role": "system", 
         "content": (
-            f"Você é o MESTRE DA AURA. Treinador técnico, estoico e direto.\n"
-            f"Atleta: {nome_atleta} | Nível: {nivel_atleta} (XP: {xp_atleta})\n"
-            f"Objetivo Declarado: {objetivo_atleta}\n"
-            f"Estado Biofísico: {estado_bio} (Score: {score_bio})\n\n"
-            f"DIRETRIZES DE RESPOSTA:\n"
-            f"1. Para montar Dietas ou Treinos, você DEVE usar obrigatoriamente as TOOLS. Não escreva o plano no chat.\n"
-            f"2. Após usar uma TOOL, sua resposta de texto deve ser EXATAMENTE: 'Treino estruturado! Confira a seção 'Treinos' logo acima.' ou 'Dieta estruturada! Confira a seção 'Dieta' logo acima.'.\n"
-            f"3. Adapte o tom: Se o score biofísico for baixo (<40), seja protetor. Se alto (>80), seja motivador técnico.\n"
-            f"4. Respostas curtas (máximo 3 parágrafos).\n"
-            f"5. Você mantém o contexto da conversa anterior."
+            f"Você é o MESTRE DA AURA. Treinador de elite, técnico e analítico.\n"
+            f"Atleta: {nome_atleta} | Nível: {nivel_atleta}\n"
+            f"Objetivo: {objetivo_atleta} | Esportes Favoritos: {', '.join(esportes_atleta)}\n"
+            f"Estado Bio: {estado_bio} (Score: {score_bio})\n\n"
+            f"DIRETRIZES TÉCNICAS:\n"
+            f"1. TREINOS: Devem ser complexos e variados. Cada dia de treino deve ter entre 5 e 10 exercícios.\n"
+            f"2. HIBRIDISMO: Se o atleta pratica Corrida, Ciclismo ou Natação, integre isso na planilha semanal de forma inteligente (Ex: Treino de perna + 20min de bike).\n"
+            f"3. TOOLS: Use obrigatoriamente as TOOLS para Dietas e Treinos. NUNCA liste os exercícios no chat.\n"
+            f"4. RESPOSTA PÓS-TOOL: Responda exatamente: 'Treino estruturado! Confira a seção 'Treinos' logo acima.' ou 'Dieta estruturada! Confira a seção 'Dieta' logo acima.'.\n"
+            f"5. TOM: Se score bio < 40, reduza o volume e aumente o descanso. Se > 80, prescreva alta intensidade."
         )
     }
 
-    # 3. Histórico e Mensagem Atual (Sincronização de contexto)
+    # 3. Histórico e Mensagem Atual
     historico = _buscar_historico(user_id, limite=6)
     mensagens = [prompt_sistema] + historico + [{"role": "user", "content": mensagem}]
 
-    # 4. Execução OpenAI (Geração de resposta ou chamada de função)
+    # 4. Execução OpenAI
     try:
         if client is None: return "⚠️ O Mestre está em meditação profunda (Sistema Offline)."
         
@@ -164,7 +169,7 @@ def processar_comando(user_id: str, mensagem: str) -> str:
         logger.error(f"Erro OpenAI para o user {user_id}: {e}")
         texto_resposta = "⚠️ O Mestre teve uma interrupção na conexão neural. Tente novamente."
 
-    # 5. Salva Interação (Persistência na coleção 'chats' do MongoDB Atlas)
+    # 5. Salva Interação
     _salvar_chat(user_id, "user", mensagem)
     _salvar_chat(user_id, "assistant", texto_resposta)
     
@@ -181,14 +186,11 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
             args = json.loads(tool.function.arguments)
             
             if nome_func == "salvar_nova_dieta":
-                # Salva o plano estruturado na coleção 'plans' via data_manager
                 if salvar_plano(user_id, "dieta", args):
-                    # [AURA FIX] Retorno padronizado para o Chat
                     respostas.append("Dieta estruturada! Confira a seção 'Dieta' logo acima.")
             
             elif nome_func == "salvar_novo_treino":
                 if salvar_plano(user_id, "treino", args):
-                    # [AURA FIX] Retorno padronizado para o Chat
                     respostas.append("Treino estruturado! Confira a seção 'Treinos' logo acima.")
         except Exception as e:
             logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")
@@ -196,7 +198,6 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
     return "\n".join(respostas) if respostas else "⚠️ Falha ao registrar o protocolo. Tente novamente."
 
 def _buscar_historico(user_id: str, limite: int) -> List[Dict]:
-    """Recupera as últimas mensagens da coleção 'chats' para dar contexto à IA."""
     if mongo_db is None: return []
     try:
         cursor = mongo_db["chats"].find({"user_id": str(user_id)}).sort("timestamp", DESCENDING).limit(limite)
@@ -207,7 +208,6 @@ def _buscar_historico(user_id: str, limite: int) -> List[Dict]:
         return []
 
 def _salvar_chat(user_id: str, role: str, content: str):
-    """Persiste a conversa no MongoDB para memória de longo prazo."""
     if mongo_db is not None:
         try:
             mongo_db["chats"].insert_one({

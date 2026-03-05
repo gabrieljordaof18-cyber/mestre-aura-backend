@@ -18,15 +18,18 @@ logger = logging.getLogger("AURA_APP")
 def create_app():
     """
     Fábrica da Aplicação: Configura segurança, rotas e tratamento de erros.
+    Garante que a nova era de treinos híbridos 3.0.0 funcione sem bloqueios.
     """
     app = Flask(__name__)
     
-    # 1. Segurança e CORS
+    # 1. Segurança e CORS (Otimizado para Planos Estruturados)
     # [AURA FIX] Ajustado para garantir que o Base44 consiga enviar Authorization Headers sem bloqueio.
+    # Expondo cabeçalhos para permitir métricas de telemetria da IA no frontend.
     CORS(app, resources={r"/*": {
         "origins": "*",
-        "allow_headers": ["Authorization", "Content-Type"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        "allow_headers": ["Authorization", "Content-Type", "X-Requested-With"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "expose_headers": ["Content-Range", "X-Content-Range"]
     }})
 
     # 2. Registro de Rotas (Blueprints)
@@ -34,25 +37,34 @@ def create_app():
     app.register_blueprint(api_bp)                        # Prefixo definido no arquivo: /api
     app.register_blueprint(strava_bp, url_prefix='/strava') # Forçamos o prefixo /strava
 
-    # 3. Rota Raiz (Health Check)
+    # 3. Rota Raiz (Health Check & Version Control)
     @app.route('/')
     def health_check():
         return jsonify({
             "status": "online",
             "system": "Aura Performance OS",
-            "version": "2.0.1",
-            "env": os.getenv("FLASK_ENV", "production")
+            "version": "3.0.0-Hybrid", # Atualizado para a nova era de IA Robusta
+            "env": os.getenv("FLASK_ENV", "production"),
+            "engine": "OpenAI-GPT-4o-Mini-Robust"
         })
 
     # 4. Tratamento Global de Erros (Evita crash no App)
     @app.errorhandler(404)
     def not_found(e):
-        return jsonify({"erro": "Rota não encontrada"}), 404
+        return jsonify({"erro": "Rota não encontrada no Aura OS"}), 404
+
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify({"erro": "Requisição mal formatada"}), 400
 
     @app.errorhandler(500)
     def server_error(e):
-        logger.error(f"Erro interno: {e}")
-        return jsonify({"erro": "Falha interna no servidor Aura"}), 500
+        logger.error(f"❌ Erro Crítico Interno: {e}")
+        return jsonify({"erro": "Falha interna no servidor Aura. Verifique os logs no Render."}), 500
+
+    # Log de Inicialização de Segurança
+    if not os.getenv("MONGODB_URI"):
+        logger.warning("⚠️ MONGODB_URI não detectada! O banco de dados ficará offline.")
 
     return app
 
@@ -62,7 +74,7 @@ app = create_app()
 if __name__ == '__main__':
     # Configuração para rodar localmente no seu MacBook
     port = int(os.getenv("PORT", 5050)) # Prioriza a porta 5050 do seu .env
-    logger.info(f"🚀 Aura OS iniciando na porta {port}...")
+    logger.info(f"🚀 Aura OS Híbrido iniciando na porta {port}...")
     
     # No seu Mac, usamos debug=True para ver as mudanças em tempo real
     # O Render ignora o __main__, então o debug=True não afetará a produção.

@@ -62,7 +62,7 @@ def get_status_jogador(current_user_id):
         if not dados: 
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
-        # [AURA FIX] Sincronização direta com a RAIZ do seu MongoDB
+        # Sincronização direta com a RAIZ do seu MongoDB
         xp_atual = int(dados.get("xp_total", 0))
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
@@ -93,13 +93,13 @@ def get_status_jogador(current_user_id):
         return jsonify({"erro": "Falha ao sincronizar perfil"}), 500
 
 # ===================================================
-# 🍎 CONSULTA DE PLANOS (TREINO E DIETA ESTRUTURADOS)
+# 🍎 CONSULTA DE PLANOS (ROBUSTEZ HÍBRIDA)
 # ===================================================
 
 @api_bp.route('/usuario/plano/treino', methods=['GET'])
 @token_required
 def get_plano_treino(current_user_id):
-    """Retorna o último treino gerado pela IA e salvo na coleção 'plans'."""
+    """Retorna o último treino híbrido gerado pela IA."""
     try:
         plano = ler_plano(current_user_id, "treino")
         if not plano:
@@ -112,7 +112,7 @@ def get_plano_treino(current_user_id):
 @api_bp.route('/usuario/plano/dieta', methods=['GET'])
 @token_required
 def get_plano_dieta(current_user_id):
-    """Retorna a última dieta gerada pela IA e salva na coleção 'plans'."""
+    """Retorna a última dieta estruturada gerada pela IA."""
     try:
         plano = ler_plano(current_user_id, "dieta")
         if not plano:
@@ -121,6 +121,22 @@ def get_plano_dieta(current_user_id):
     except Exception as e:
         logger.error(f"Erro ao ler dieta: {e}")
         return jsonify({"erro": "Erro ao carregar dieta"}), 500
+
+@api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
+@token_required
+def atualizar_biometria(current_user_id):
+    """Atualiza dados físicos para que a IA gere treinos com volume correto."""
+    try:
+        dados = request.get_json(force=True)
+        sucesso = salvar_memoria(current_user_id, {
+            "peso_kg": float(dados.get("peso", 70)),
+            "altura_cm": float(dados.get("altura", 170)),
+            "idade": int(dados.get("idade", 25)),
+            "objetivo": dados.get("objetivo", "Performance")
+        })
+        return jsonify({"sucesso": sucesso})
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 # ===================================================
 # ⚔️ CLÃS E RANKING (SOCIAL)
@@ -135,35 +151,8 @@ def get_ranking_cla():
         logger.error(f"Erro ao buscar ranking: {e}")
         return jsonify({"ranking": []})
 
-@api_bp.route('/cla/chat', methods=['GET', 'POST'])
-@token_required
-def chat_cla(current_user_id):
-    if mongo_db is None:
-        return jsonify({"erro": "Chat temporariamente offline"}), 503
-
-    if request.method == 'GET':
-        try:
-            cursor = mongo_db["chat_messages"].find().sort("timestamp", -1).limit(50)
-            msgs = [{"user": d.get("nome"), "msg": d.get("content"), "time": d.get("timestamp")} for d in cursor]
-            return jsonify(msgs[::-1])
-        except Exception as e:
-            return jsonify([])
-
-    if request.method == 'POST':
-        try:
-            dados = request.get_json(force=True)
-            mongo_db["chat_messages"].insert_one({
-                "user_id": current_user_id,
-                "nome": dados.get("nome", "Atleta"),
-                "content": dados.get("mensagem"),
-                "timestamp": datetime.now().isoformat()
-            })
-            return jsonify({"sucesso": True})
-        except Exception as e:
-            return jsonify({"erro": "Falha ao enviar mensagem"}), 500
-
 # ===================================================
-# 🧠 COMANDO DO MESTRE (IA)
+# 🧠 COMANDO DO MESTRE (IA HÍBRIDA)
 # ===================================================
 
 @api_bp.route('/comando', methods=['POST'])
@@ -174,7 +163,7 @@ def comando(current_user_id):
         msg = dados.get('comando', '').strip()
         if not msg: return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
         
-        # [AURA FIX] O processar_comando no logic.py agora lida com as Tools e responde curto
+        # O processar_comando no logic.py agora lida com os 10 exercícios e híbridos
         resposta = processar_comando(current_user_id, msg)
         return jsonify({"resposta": resposta})
     except Exception as e:

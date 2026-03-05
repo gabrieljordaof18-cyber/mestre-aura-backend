@@ -2,64 +2,87 @@ from datetime import datetime
 from typing import Dict, Any
 
 # ==============================================================
-# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 2.0 - AURA PERFORMANCE)
+# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 3.0 - HYBRID ROBUST)
 # ==============================================================
 
 def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[str, Any]:
     """
     Retorna a estrutura base de um novo usuário para o MongoDB.
-    [AURA FIX] Sincronizado para a Nova Economia:
+    [AURA ROBUST] Sincronizado para Treinos Híbridos e Nova Economia:
     - Aura Coins (moedas) = XP (1:1)
     - Cristais (saldo_cristais) = XP / 10
     """
     agora_iso = datetime.now().isoformat()
     
     return {
-        # --- 1. IDENTIFICAÇÃO E ACESSO ---
+        # --- 1. IDENTIFICAÇÃO E PERFIL ---
         "nome": nome,
         "email": email,
+        "idade": 25,                    # Vital para cálculos metabólicos da IA
+        "tipo_perfil": "atleta",        # atleta ou professor
+        "esportes_favoritos": ["Musculação"], # Define a prioridade do treino híbrido
         "auth_provider": "email", 
         "created_at": agora_iso,
         "updated_at": agora_iso,
         "foto_perfil": "", 
         "plano": "free",
         "objetivo": "Performance Máxima", 
+        "cla_atual_id": None,           # Âncora para sistema social
         
-        # --- 2. PROGRESSÃO (CAMPOS NA RAIZ PARA SINCRONIZAÇÃO ATLAS) ---
-        # [AURA FIX] Estrutura unificada para evitar moedas fantasmas
+        # --- 2. PROGRESSÃO E ECONOMIA ---
         "nivel": 1,
-        "xp_total": 0,         # XP Acumulado
-        "moedas": 0,           # Aura Coins Oficiais (Sincronizado 1:1 com XP)
-        "saldo_cristais": 0,   # Moeda Premium (Sincronizado 10:1 com XP)
+        "xp_total": 0,         
+        "moedas": 0,           # Sincronizado 1:1 com XP
+        "saldo_cristais": 0,   # Sincronizado 10:1 com XP
         "titulo_atual": "Iniciado",
         
-        # --- 3. STATUS ATUAL (BIO-MÉTRICAS) ---
+        # --- 3. STATUS ATUAL (BIO-SINALIZAÇÃO) ---
         "status_atual": {
             "ultima_sincronizacao": agora_iso,
-            "fadiga": 0,
-            "recuperacao": 100,
+            "fadiga": 20.0,
+            "recuperacao": 100.0,
             "prontidao": 100,
             "passos_hoje": 0,
             "fc_repouso": 0,
             "hrv_valor": 0,
-            "sono_horas": 0.0
+            "sono_horas": 0.0,
+            "historico_recente_esportes": [] # Contexto para o Mestre Aura
         },
 
-        # --- 4. HOMEOSTASE (SAÚDE SISTÊMICA) ---
+        # --- 4. HOMEOSTASE (INTELIGÊNCIA DE CARGA) ---
         "homeostase": {
             "score": 100,
             "estado": "Plena Harmonia 🌟",
-            "componentes": {"corpo": 100, "mente": 100, "energy": 100},
+            "componentes": {"corpo": 100, "mente": 100, "energia": 100},
             "ultima_analise": agora_iso
         },
 
-        # --- 5. GAMIFICAÇÃO ---
-        "gamificacao": {
-            "missoes_ativas": [],       
-            "ultima_geracao_missoes": agora_iso
+        # --- 5. PLANOS IA (NOVO) ---
+        "planos": {
+            "treino_ativo": False,
+            "dieta_ativa": False,
+            "ultima_atualizacao_ia": agora_iso
         },
 
-        # --- 6. INTEGRAÇÕES ---
+        # --- 6. GAMIFICAÇÃO ---
+        "gamificacao": {
+            "missoes_ativas": [],       
+            "ultima_geracao_missoes": agora_iso,
+            "estatisticas": {
+                "missoes_completadas": 0,
+                "total_atividades": 0,
+                "dias_seguidos": 0
+            }
+        },
+
+        # --- 7. INVENTÁRIO (Sincronizado com Mercado) ---
+        "inventario": {
+            "vouchers": [],
+            "itens_consumiveis": [],
+            "cupons_ativos": []
+        },
+
+        # --- 8. INTEGRAÇÕES ---
         "integracoes": {
             "strava": {
                 "conectado": False,
@@ -69,25 +92,28 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             "apple_health": {"conectado": False}
         },
         
-        # --- 7. SISTEMA ---
+        # --- 9. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
-            "versao_schema": "2.0.2" # Incremento de versão para controle de deploy
+            "versao_schema": "3.0.0-Hybrid" # Era dos planos robustos
         }
     }
 
 def obter_schema_padrao_global() -> Dict[str, Any]:
-    """Estrutura da Memória Global (Analytics e Cache de Ranking)."""
+    """Estrutura da Memória Global (Analytics de Alta Performance)."""
     return {
         "_id": "global_state", 
+        "versao_ia_ativa": "3.0.0-Hybrid",
+        "temporada_atual": 1,
         "sistema": {
-            "versao_api": "2.0.2",
-            "status": "online",
+            "versao_api": "3.0.0",
+            "status": "ativa_robust",
             "manutencao": False
         },
         "analytics": {
             "total_usuarios": 0,
-            "treinos_processados": 0,
+            "total_planos_gerados": 0, # Novo
+            "total_treinos_realizados": 0, # Novo
             "mensagens_trocadas": 0
         },
         "ranking_global_cache": {
@@ -104,9 +130,9 @@ def obter_schema_padrao_produto() -> Dict[str, Any]:
         "nome": "",
         "marca": "",
         "preco_final": 0.0,
-        "custo_moedas": 0, # [AURA FIX] Sincronizado com o campo 'moedas' raiz
+        "custo_moedas": 0, 
         "nivel_minimo": 1,
         "imagem_url": "",
-        "categoria": "suplementos",
+        "categoria": "destaque",
         "estoque": True
     }

@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify, redirect
 # [AURA FIX] Garantindo que as rotas utilizem o Data Manager sincronizado com o Atlas
 from data_manager import salvar_conexao_strava
 from logic_strava import processar_evento_webhook
+from data_sensores import obter_dados_fisiologicos # Para sync imediato pós-login
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_STRAVA")
@@ -24,16 +25,16 @@ def strava_login():
     """Redireciona o atleta para a autorização do Strava."""
     client_id = os.getenv('STRAVA_CLIENT_ID')
     
-    # [AURA FIX] Sincronização de URI: O Render exige HTTPS em produção. 
-    # Certifique-se de que no Dashboard do Strava a URI seja exatamente esta.
-    redirect_uri = os.getenv('STRAVA_REDIRECT_URI', 'https://seu-app-no-render.onrender.com/strava/auth/strava/callback')
+    # [AURA FIX] Sincronização de URI: Detecta se está no Render ou Localhost
+    # No Dashboard do Strava, a Redirect URI deve ser a do Render em produção.
+    redirect_uri = os.getenv('STRAVA_REDIRECT_URI')
     
     if not client_id:
         logger.error("❌ STRAVA_CLIENT_ID ausente nas variáveis de ambiente.")
         return jsonify({"erro": "Configuração do servidor incompleta (Client ID)"}), 500
 
-    # Scopes necessários para leitura detalhada de treinos e perfil
-    # 'activity:read_all' permite ler treinos privados se o usuário autorizar
+    # Scopes robustos para leitura detalhada de treinos e perfil (Necessário para IA Híbrida)
+    # 'activity:read_all' é fundamental para a IA entender o histórico do atleta
     scope = "read,activity:read_all,profile:read_all"
     
     strava_auth_url = (
@@ -81,11 +82,24 @@ def strava_callback():
             }
             
             # Persistência no MongoDB Atlas (Coleção 'usuarios')
-            # [AURA FIX] salvar_conexao_strava agora lida com o schema simplificado (raiz)
+            # Extraímos o ID do atleta para facilitar o sync posterior
+            strava_atleta_id = str(atleta.get('id'))
+            
             if salvar_conexao_strava(atleta, tokens):
-                logger.info(f"✅ Sincronização Completa: Atleta {atleta.get('firstname')} vinculado ao Atlas.")
+                logger.info(f"✅ Sincronização Completa: Atleta {atleta.get('firstname')} vinculado.")
                 
-                # Interface de Confirmação Estilizada (Harmonia com o Base44)
+                # [AURA ROBUST] Tentamos forçar uma primeira coleta de dados para alimentar a IA
+                # Isso permite que o Mestre Aura já conheça o histórico do atleta no primeiro chat
+                try:
+                    # Buscamos o ID interno do usuário que acabamos de vincular
+                    from data_manager import mongo_db
+                    user_doc = mongo_db["usuarios"].find_one({"integracoes.strava.atleta_id": strava_atleta_id})
+                    if user_doc:
+                        obter_dados_fisiologicos(str(user_doc["_id"]))
+                except:
+                    pass
+
+                # Interface de Confirmação Estilizada
                 return """
                 <html>
                     <head><title>AURA SYNC</title><meta charset="UTF-8"></head>
@@ -93,9 +107,9 @@ def strava_callback():
                         <div style="text-align: center; border: 1px solid #10b981; padding: 3rem; border-radius: 1.5rem; background: #18181b; box-shadow: 0 10px 40px rgba(16, 185, 129, 0.15); max-width: 400px;">
                             <div style="font-size: 4rem; margin-bottom: 1.5rem;">⚡</div>
                             <h1 style="margin: 0 0 0.5rem 0; letter-spacing: -1px;">SINCRO ESTABELECIDA</h1>
-                            <p style="color: #a1a1aa; line-height: 1.5;">O Mestre da Aura agora tem acesso aos seus biomarcadores de treino.</p>
+                            <p style="color: #a1a1aa; line-height: 1.5;">O Mestre da Aura agora tem acesso ao seu histórico esportivo para gerar treinos híbridos.</p>
                             <hr style="border: 0; border-top: 1px solid #27272a; margin: 2rem 0;">
-                            <p style="font-size: 0.85rem; color: #71717a; font-weight: bold;">VOCÊ PODE FECHAR ESTA ABA AGORA.</p>
+                            <p style="font-size: 0.85rem; color: #71717a; font-weight: bold;">FECHE ESTA ABA E VOLTE AO APP.</p>
                         </div>
                     </body>
                 </html>
@@ -134,7 +148,7 @@ def webhook_strava():
             logger.info("✅ Handshake do Webhook Strava validado com sucesso.")
             return jsonify({"hub.challenge": challenge}), 200
         
-        logger.warning(f"⚠️ Tentativa de validação de Webhook com token inválido: {verify_token}")
+        logger.warning(f"⚠️ Tentativa de validação de Webhook com token inválido.")
         return "Token de verificação inválido", 403
 
     # 2. Recebimento de Atividades (Processamento Assíncrono)
@@ -145,11 +159,9 @@ def webhook_strava():
         logger.info(f"🔔 Novo evento Strava: {evento.get('aspect_type')} de {evento.get('object_type')}")
         
         try:
-            # [AURA FIX] A lógica processar_evento_webhook agora atualiza XP na raiz do usuário
-            # Retornamos 200 IMEDIATAMENTE para o Strava para evitar retentativas desnecessárias
+            # Processamento do evento para atualizar XP e contexto biofísico
             processar_evento_webhook(evento)
             return jsonify({"status": "recebido"}), 200
         except Exception as e:
             logger.error(f"❌ Falha no processamento do Webhook: {e}")
-            # Strava exige 200 mesmo em erro lógico para não inundar o servidor com retries
             return jsonify({"status": "erro_interno_processado"}), 200

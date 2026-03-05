@@ -11,7 +11,6 @@ from schema import obter_schema_padrao_global
 logger = logging.getLogger("AURA_DATA_GLOBAL")
 
 # Constantes do Banco (Coleção dedicada a configurações do sistema)
-# [AURA FIX] Ajustado para garantir que a coleção exista no mestre_aura_db
 COLECAO_CONFIGS = "configs_global"
 ID_GLOBAL = "global_state"
 
@@ -37,6 +36,10 @@ def carregar_memoria_global() -> Dict[str, Any]:
             logger.warning("🌍 Estado Global não encontrado. Criando novo seed...")
             novo_global = obter_schema_padrao_global()
             novo_global["_id"] = ID_GLOBAL
+            # Injeção de metadados da nova era de treinos híbridos
+            novo_global["versao_ia_ativa"] = "3.0.0-Hybrid"
+            novo_global["temporada_atual"] = 1
+            
             # Usamos o schema padrão e garantimos a inserção inicial
             colecao.insert_one(novo_global)
             return novo_global
@@ -78,26 +81,36 @@ def salvar_memoria_global(dados: Dict[str, Any]) -> bool:
 # 📊 ANALYTICS & RANKING (ALTA PERFORMANCE)
 # ==============================================================
 
-def registrar_interacao_global(sentimento: str = "neutro") -> bool:
+def registrar_interacao_global(sentimento: str = "neutro", tipo_acao: str = "conversa") -> bool:
     """
-    Incrementa os contadores de uso do sistema sem expor dados de usuários.
+    Incrementa os contadores de uso do sistema. 
+    [AURA UPDATE] Agora rastreia gerações de planos robustos e treinos iniciados.
     """
     if mongo_db is None: return False
+
+    inc_payload = {"analytics.mensagens_trocadas": 1}
+    
+    # Lógica de contagem para o novo fluxo de Treino/Dieta IA
+    if tipo_acao == "gerar_plano":
+        inc_payload["analytics.total_planos_gerados"] = 1
+    elif tipo_acao == "treino_iniciado":
+        inc_payload["analytics.total_treinos_realizados"] = 1
 
     try:
         # Incremento atômico: Essencial para o ambiente multijogador do Aura
         mongo_db[COLECAO_CONFIGS].update_one(
             {"_id": ID_GLOBAL},
             {
-                "$inc": {
-                    "analytics.mensagens_trocadas": 1
-                },
-                "$set": {"ultima_atualizacao": datetime.now().isoformat()}
+                "$inc": inc_payload,
+                "$set": {
+                    "ultima_atualizacao": datetime.now().isoformat(),
+                    "status_ia": "ativa_robust"
+                }
             }
         )
         return True
     except Exception as e:
-        logger.error(f"⚠️ Erro ao registrar analytics: {e}")
+        logger.error(f"⚠️ Erro ao registrar analytics global: {e}")
         return False
 
 def atualizar_cache_ranking(lista_ranking: list) -> bool:
@@ -120,4 +133,20 @@ def atualizar_cache_ranking(lista_ranking: list) -> bool:
         return True
     except Exception as e:
         logger.error(f"❌ Erro ao atualizar cache ranking: {e}")
+        return False
+
+def atualizar_versao_ia_global(versao: str):
+    """
+    Força a atualização da versão do motor de IA em todo o sistema.
+    Utilizado para migrar de treinos simples para treinos robustos (Hybrid).
+    """
+    if mongo_db is None: return False
+    try:
+        mongo_db[COLECAO_CONFIGS].update_one(
+            {"_id": ID_GLOBAL},
+            {"$set": {"versao_ia_ativa": versao, "ultima_atualizacao": datetime.now().isoformat()}}
+        )
+        return True
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar versão IA global: {e}")
         return False

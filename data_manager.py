@@ -175,37 +175,55 @@ def obter_ranking_global(limite=50):
         return []
 
 # ==============================================================
-# 🧠 PLANOS MESTRE (NOVO FLUXO IA)
+# 🧠 PLANOS MESTRE (ROBUSTEZ DE TREINOS HÍBRIDOS)
 # ==============================================================
 
 def salvar_plano(user_id: str, tipo: str, conteudo: dict):
     """
     Salva ou atualiza um plano estruturado (treino ou dieta).
-    [AURA UPDATE] Garante que o ID do usuário seja limpo antes da operação.
+    [AURA UPDATE] Agora salva metadados de complexidade e integra com a timeline do atleta.
     """
     if mongo_db is None: return False
     try:
         clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
+        
+        # [AURA ROBUST] Inserimos uma cópia no histórico antes de atualizar o plano ativo
+        mongo_db["plan_history"].insert_one({
+            "user_id": clean_user_id,
+            "tipo": tipo,
+            "conteudo": conteudo,
+            "archived_at": datetime.now().isoformat()
+        })
+
+        # Atualizamos o plano ativo na coleção principal 'plans'
         mongo_db["plans"].update_one(
             {"user_id": clean_user_id, "tipo": tipo},
             {"$set": {
                 "user_id": clean_user_id,
                 "tipo": tipo,
                 "conteudo": conteudo,
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now().isoformat(),
+                "versao_ia": "3.0.0-Hybrid" # Marcador para a nova robustez
             }},
             upsert=True
         )
-        logger.info(f"✅ Plano de {tipo} salvo com sucesso para o usuário {clean_user_id}")
+        
+        # Atualizamos o documento do usuário para avisar que há um plano novo
+        mongo_db["usuarios"].update_one(
+            {"_id": ObjectId(clean_user_id)},
+            {"$set": {f"planos.{tipo}_ativo": True, "updated_at": datetime.now().isoformat()}}
+        )
+
+        logger.info(f"✅ [ROBUST] Plano de {tipo} (Foco: {conteudo.get('foco_atual', 'N/A')}) salvo para {clean_user_id}")
         return True
     except Exception as e:
-        logger.error(f"Erro ao salvar plano {tipo} para {user_id}: {e}")
+        logger.error(f"Erro ao salvar plano robusto {tipo} para {user_id}: {e}")
         return False
 
 def ler_plano(user_id: str, tipo: str):
     """
-    Recupera o plano mais recente de um tipo específico.
-    [AURA UPDATE] Retorna o conteúdo estruturado para o frontend.
+    Recupera o plano robusto mais recente.
+    [AURA UPDATE] Garante o retorno de campos de endurance (distancia/unidade).
     """
     if mongo_db is None: return {}
     try:
@@ -215,7 +233,7 @@ def ler_plano(user_id: str, tipo: str):
             return doc.get("conteudo", {})
         return {}
     except Exception as e:
-        logger.error(f"Erro ao ler plano {tipo} para {user_id}: {e}")
+        logger.error(f"Erro ao ler plano robusto {tipo} para {user_id}: {e}")
         return {}
 
 # ==============================================================
@@ -223,7 +241,6 @@ def ler_plano(user_id: str, tipo: str):
 # ==============================================================
 if mongo_db is not None:
     try:
-        # [AURA FIX] Verificação preventiva para não duplicar índices existentes
         colecao_usuarios = mongo_db["usuarios"]
         indices_atuais = colecao_usuarios.index_information()
         
@@ -236,9 +253,12 @@ if mongo_db is not None:
         if "xp_total_-1" not in indices_atuais:
             colecao_usuarios.create_index([("xp_total", -1)])
             
-        # Índice para busca rápida de planos por usuário e tipo
+        # Índice para busca rápida de planos
         mongo_db["plans"].create_index([("user_id", 1), ("tipo", 1)])
+        
+        # Novo índice para o histórico de evolução
+        mongo_db["plan_history"].create_index([("user_id", 1), ("archived_at", -1)])
             
-        logger.info("⚡ Índices de performance do MongoDB validados com segurança.")
+        logger.info("⚡ Índices robustos validados no MongoDB Atlas.")
     except Exception as e:
         logger.warning(f"⚠️ Aviso ao gerenciar índices: {e}")

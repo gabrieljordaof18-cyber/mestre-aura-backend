@@ -102,11 +102,12 @@ def criar_ou_buscar_cliente(usuario_dados: dict) -> str:
 def criar_cobranca(dados_pagamento: dict) -> dict:
     """
     Gera a cobrança (PIX ou Cartão) e SALVA NO MONGODB.
+    [AURA ROBUST] Agora vincula o tipo de plano ao contexto do atleta.
     """
     headers = get_headers()
     
-    # [AURA FIX] Limpeza do user_id para garantir busca correta no MongoDB
-    user_id = str(dados_pagamento.get('user_id', '')).strip()
+    # [AURA FIX] Limpeza profunda do user_id
+    user_id = str(dados_pagamento.get('user_id', '')).strip().replace('"', '').replace("'", "")
     if not user_id:
         logger.warning("⚠️ Tentativa de criar cobrança sem user_id vinculado.")
 
@@ -115,7 +116,7 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     customer_id = criar_ou_buscar_cliente(usuario_info)
     
     if not customer_id:
-        return {"erro": "Falha ao registrar dados no gateway de pagamento. Verifique CPF/Email."}
+        return {"erro": "Falha ao registrar dados no gateway. Verifique CPF/Email."}
 
     # 2. Configurar Detalhes da Cobrança
     metodo = str(dados_pagamento.get('metodo', 'pix')).lower()
@@ -123,10 +124,10 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     
     try:
         valor_float = float(dados_pagamento.get('valor', 0))
-    except ValueError:
+    except (ValueError, TypeError):
         return {"erro": "Valor de pagamento inválido."}
     
-    # Ajuste: Vencimento para o dia seguinte para evitar erros de processamento noturno
+    # Vencimento padrão: 24h para PIX, imediato para Cartão
     vencimento = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     
     payload = {
@@ -134,8 +135,8 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         "billingType": billing_type,
         "value": valor_float,
         "dueDate": vencimento,
-        "description": f"Aura OS: {dados_pagamento.get('descricao', 'Produtos Performance')}",
-        "externalReference": user_id # Vinculamos o ID do MongoDB para o Webhook futuro
+        "description": f"Aura OS Robust: {dados_pagamento.get('descricao', 'Upgrade Performance')}",
+        "externalReference": user_id 
     }
 
     # 3. Enviar solicitação para o Asaas
@@ -143,15 +144,15 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         response = requests.post(f"{ASAAS_URL}/payments", json=payload, headers=headers)
         
         if response.status_code != 200:
-            logger.error(f"❌ Resposta Asaas Erro ({response.status_code}): {response.text}")
-            erro_msg = response.json().get('errors', [{'description': 'Erro na API do Asaas'}])[0]['description']
-            return {"erro": f"Pagamento recusado: {erro_msg}"}
+            logger.error(f"❌ Resposta Asaas Erro ({response.status_code})")
+            erro_json = response.json()
+            msg = erro_json.get('errors', [{'description': 'Erro na API Asaas'}])[0]['description']
+            return {"erro": f"Pagamento recusado: {msg}"}
         
         data_asaas = response.json()
         payment_id = data_asaas['id']
 
-        # 4. PERSISTÊNCIA (Sincronização com MongoDB Atlas)
-        # [AURA FIX] Comparação explícita com None para evitar erro de bool() no PyMongo
+        # 4. PERSISTÊNCIA (Sincronização MongoDB Atlas)
         if mongo_db is not None and user_id:
             try:
                 novo_pedido = {
@@ -161,20 +162,19 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
                     "valor": valor_float,
                     "metodo": metodo,
                     "status": "PENDING",
-                    "descricao": dados_pagamento.get('descricao', 'Pedido Aura'),
+                    "tipo_plano": dados_pagamento.get('tipo_plano', 'PRO'),
+                    "descricao": dados_pagamento.get('descricao', 'Upgrade Aura'),
+                    "versao_os": "3.0.0-Hybrid",
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
                 }
-                # Salvamos na coleção 'pedidos' para controle financeiro
                 mongo_db["pedidos"].insert_one(novo_pedido)
-                logger.info(f"📦 Pedido {payment_id} registrado no MongoDB para o usuário {user_id}")
+                logger.info(f"📦 Pedido {payment_id} registrado no Atlas para {user_id}")
             except Exception as mongo_err:
-                logger.error(f"⚠️ Erro ao persistir pedido no MongoDB: {mongo_err}")
-                # Não retornamos erro aqui para não travar o pagamento se o banco falhar momentaneamente
+                logger.error(f"⚠️ Erro ao persistir pedido: {mongo_err}")
 
-        # 5. Formatação de Retorno para o Frontend (Base44)
+        # 5. Formatação de Retorno para o Base44
         if billing_type == "PIX":
-            # Para PIX, precisamos buscar o QR Code em um endpoint separado do Asaas
             qr_response = requests.get(f"{ASAAS_URL}/payments/{payment_id}/pixQrCode", headers=headers)
             if qr_response.status_code == 200:
                 qr_data = qr_response.json()
@@ -187,7 +187,6 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
                     "vencimento": vencimento
                 }
         
-        # Para Cartão ou Link, retornamos a URL da fatura
         return {
             "sucesso": True,
             "id_pagamento": payment_id,
@@ -197,5 +196,5 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"❌ Erro crítico no fluxo de pagamento Asaas: {e}")
-        return {"erro": "Falha de comunicação com o sistema financeiro. Tente novamente."}
+        logger.error(f"❌ Erro crítico Asaas: {e}")
+        return {"erro": "Falha de comunicação financeira. Tente novamente."}

@@ -1,22 +1,33 @@
 {
     "configuracoes_sistema": {
-        "versao_schema": "2.0.1",
+        "versao_schema": "3.0.0-Hybrid",
         "ambiente": "producao",
-        "last_sync_atlas": "2026-03-05"
+        "motor_ia": "GPT-4o-Mini-Robust",
+        "last_sync_atlas": "2026-03-05",
+        "limite_exercicios_por_treino": 10
     },
     "template_usuario_novo": {
         "nome": "Atleta Aura",
         "email": "",
+        "idade": 25,
+        "tipo_perfil": "atleta",
+        "esportes_favoritos": ["Musculação"],
         "nivel": 1,
         "xp_total": 0,
         "moedas": 0,
         "saldo_cristais": 0,
         "objetivo": "Performance Máxima",
         "foto_perfil": "",
+        "cla_atual_id": null,
         "status_atual": {
-            "fadiga": 0,
+            "fadiga": 20,
             "recuperacao": 100,
             "prontidao": 100,
+            "passos_hoje": 0,
+            "fc_repouso": 0,
+            "hrv_valor": 0,
+            "sono_horas": 0,
+            "historico_recente_esportes": [],
             "ultima_sincronizacao": ""
         },
         "homeostase": {
@@ -29,15 +40,33 @@
             },
             "ultima_analise": ""
         },
+        "planos": {
+            "treino_ativo": false,
+            "dieta_ativa": false,
+            "ultima_atualizacao_ia": ""
+        },
         "gamificacao": {
             "missoes_ativas": [],
-            "ultima_geracao_missoes": ""
+            "ultima_geracao_missoes": "",
+            "estatisticas": {
+                "missoes_completadas": 0,
+                "total_atividades": 0,
+                "dias_seguidos": 0
+            }
+        },
+        "inventario": {
+            "vouchers": [],
+            "itens_consumiveis": [],
+            "cupons_ativos": []
         },
         "integracoes": {
             "strava": {
                 "conectado": false,
                 "atleta_id": "",
                 "tokens": {}
+            },
+            "apple_health": {
+                "conectado": false
             }
         },
         "created_at": "",
