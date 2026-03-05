@@ -63,32 +63,26 @@ def get_status_jogador(current_user_id):
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
         # [AURA FIX] Sincronização direta com a RAIZ do seu MongoDB
-        # Removida a chave 'moedas' secundária para evitar o conflito visual do raio de 50
         xp_atual = int(dados.get("xp_total", 0))
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
-        
-        # [AURA FIX] Agora o Frontend usará o XP_TOTAL como a base para o saldo de Aura Coins
-        # e o saldo_cristais para a moeda premium, conforme sua regra de 10:1
         cristais = int(dados.get("saldo_cristais", 0))
         
-        # Lógica de Barra de Progresso (Calculada no Backend para evitar bugs na UI)
+        # Lógica de Barra de Progresso
         XP_BASE = 1000
         xp_prox = XP_BASE * nivel_atual
         xp_anterior = XP_BASE * (nivel_atual - 1)
         range_nivel = xp_prox - xp_anterior
         xp_no_nivel = xp_atual - xp_anterior
         
-        # Garantir que o progresso seja um inteiro entre 0 e 100
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
-        # [AURA FIX] Payload limpo: Enviamos xp_total (Aura Coins) e saldo_cristais
         return jsonify({
             "id": current_user_id,
             "nome": nome_atleta,
             "foto": dados.get("foto_perfil", ""),
-            "xp_total": xp_atual,         # Este valor será usado como saldo de Aura Coins 1:1
-            "saldo_cristais": cristais,    # Saldo de Cristais (XP / 10)
+            "xp_total": xp_atual,
+            "saldo_cristais": cristais,
             "nivel": nivel_atual,
             "barra_progresso": max(0, min(100, progresso)),
             "xp_falta": max(0, range_nivel - xp_no_nivel),
@@ -97,6 +91,36 @@ def get_status_jogador(current_user_id):
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
         return jsonify({"erro": "Falha ao sincronizar perfil"}), 500
+
+# ===================================================
+# 🍎 CONSULTA DE PLANOS (TREINO E DIETA ESTRUTURADOS)
+# ===================================================
+
+@api_bp.route('/usuario/plano/treino', methods=['GET'])
+@token_required
+def get_plano_treino(current_user_id):
+    """Retorna o último treino gerado pela IA e salvo na coleção 'plans'."""
+    try:
+        plano = ler_plano(current_user_id, "treino")
+        if not plano:
+            return jsonify({"mensagem": "Nenhum treino ativo. Peça ao Mestre para montar um!"}), 200
+        return jsonify(plano)
+    except Exception as e:
+        logger.error(f"Erro ao ler treino: {e}")
+        return jsonify({"erro": "Erro ao carregar treino"}), 500
+
+@api_bp.route('/usuario/plano/dieta', methods=['GET'])
+@token_required
+def get_plano_dieta(current_user_id):
+    """Retorna a última dieta gerada pela IA e salva na coleção 'plans'."""
+    try:
+        plano = ler_plano(current_user_id, "dieta")
+        if not plano:
+            return jsonify({"mensagem": "Nenhuma dieta ativa. Peça ao Mestre para montar uma!"}), 200
+        return jsonify(plano)
+    except Exception as e:
+        logger.error(f"Erro ao ler dieta: {e}")
+        return jsonify({"erro": "Erro ao carregar dieta"}), 500
 
 # ===================================================
 # ⚔️ CLÃS E RANKING (SOCIAL)
@@ -114,7 +138,6 @@ def get_ranking_cla():
 @api_bp.route('/cla/chat', methods=['GET', 'POST'])
 @token_required
 def chat_cla(current_user_id):
-    """Gerencia as mensagens do chat global do clã."""
     if mongo_db is None:
         return jsonify({"erro": "Chat temporariamente offline"}), 503
 
@@ -151,6 +174,7 @@ def comando(current_user_id):
         msg = dados.get('comando', '').strip()
         if not msg: return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
         
+        # [AURA FIX] O processar_comando no logic.py agora lida com as Tools e responde curto
         resposta = processar_comando(current_user_id, msg)
         return jsonify({"resposta": resposta})
     except Exception as e:
@@ -182,7 +206,6 @@ def concluir_missao(current_user_id):
                 m["concluida"] = True
                 salvar_memoria(current_user_id, memoria)
                 
-                # [AURA FIX] Aplica a regra unificada: XP, Moedas (1:1) e Cristais (10:1)
                 resultado = aplicar_xp(current_user_id, m.get("xp", 0))
                 return jsonify({
                     "sucesso": True, 

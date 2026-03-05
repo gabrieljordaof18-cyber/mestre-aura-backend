@@ -54,7 +54,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_nova_dieta",
-            "description": "Salva o plano alimentar estruturado no perfil do atleta no MongoDB.",
+            "description": "ESTRUTURA e SALVA um plano alimentar completo no banco de dados. Use sempre que o usuário pedir para montar, sugerir ou alterar uma dieta.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -74,7 +74,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "Cria e salva uma rotina de exercícios semanal no perfil do atleta.",
+            "description": "ESTRUTURA e SALVA uma rotina de exercícios semanal no banco de dados. Use sempre que o usuário pedir para montar, sugerir ou organizar um treino.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -128,10 +128,11 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             f"Objetivo Declarado: {objetivo_atleta}\n"
             f"Estado Biofísico: {estado_bio} (Score: {score_bio})\n\n"
             f"DIRETRIZES DE RESPOSTA:\n"
-            f"1. Para Dietas/Treinos, use obrigatoriamente as TOOLS para estruturar o plano no banco.\n"
-            f"2. Adapte o tom: Se o score biofísico for baixo (<40), seja protetor e recomende descanso. Se alto (>80), desafie o atleta ao limite.\n"
-            f"3. Respostas curtas e densas (máximo 3 parágrafos).\n"
-            f"4. Você tem acesso ao histórico de conversas para manter a continuidade."
+            f"1. Para montar Dietas ou Treinos, você DEVE usar obrigatoriamente as TOOLS. Não escreva o plano no chat.\n"
+            f"2. Após usar uma TOOL, sua resposta de texto deve ser EXATAMENTE: 'Treino estruturado! Confira a seção 'Treinos' logo acima.' ou 'Dieta estruturada! Confira a seção 'Dieta' logo acima.'.\n"
+            f"3. Adapte o tom: Se o score biofísico for baixo (<40), seja protetor. Se alto (>80), seja motivador técnico.\n"
+            f"4. Respostas curtas (máximo 3 parágrafos).\n"
+            f"5. Você mantém o contexto da conversa anterior."
         )
     }
 
@@ -182,11 +183,13 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
             if nome_func == "salvar_nova_dieta":
                 # Salva o plano estruturado na coleção 'plans' via data_manager
                 if salvar_plano(user_id, "dieta", args):
-                    respostas.append("🥗 Protocolo nutricional calibrado e salvo no seu perfil.")
+                    # [AURA FIX] Retorno padronizado para o Chat
+                    respostas.append("Dieta estruturada! Confira a seção 'Dieta' logo acima.")
             
             elif nome_func == "salvar_novo_treino":
                 if salvar_plano(user_id, "treino", args):
-                    respostas.append("⚔️ Cronograma de treinamento de elite registrado.")
+                    # [AURA FIX] Retorno padronizado para o Chat
+                    respostas.append("Treino estruturado! Confira a seção 'Treinos' logo acima.")
         except Exception as e:
             logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")
             
@@ -194,12 +197,10 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
 
 def _buscar_historico(user_id: str, limite: int) -> List[Dict]:
     """Recupera as últimas mensagens da coleção 'chats' para dar contexto à IA."""
-    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
     if mongo_db is None: return []
     try:
         cursor = mongo_db["chats"].find({"user_id": str(user_id)}).sort("timestamp", DESCENDING).limit(limite)
         msgs = [{"role": doc["role"], "content": doc["content"]} for doc in cursor]
-        # Invertemos para que fiquem na ordem cronológica correta (mais antiga para mais nova)
         return msgs[::-1]
     except Exception as e:
         logger.error(f"Erro ao buscar histórico: {e}")
@@ -207,7 +208,6 @@ def _buscar_historico(user_id: str, limite: int) -> List[Dict]:
 
 def _salvar_chat(user_id: str, role: str, content: str):
     """Persiste a conversa no MongoDB para memória de longo prazo."""
-    # [AURA FIX] Comparação explícita com None
     if mongo_db is not None:
         try:
             mongo_db["chats"].insert_one({

@@ -175,34 +175,47 @@ def obter_ranking_global(limite=50):
         return []
 
 # ==============================================================
-# 🧠 PLANOS MESTRE
+# 🧠 PLANOS MESTRE (NOVO FLUXO IA)
 # ==============================================================
 
 def salvar_plano(user_id: str, tipo: str, conteudo: dict):
+    """
+    Salva ou atualiza um plano estruturado (treino ou dieta).
+    [AURA UPDATE] Garante que o ID do usuário seja limpo antes da operação.
+    """
     if mongo_db is None: return False
     try:
+        clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
         mongo_db["plans"].update_one(
-            {"user_id": str(user_id), "tipo": tipo},
+            {"user_id": clean_user_id, "tipo": tipo},
             {"$set": {
-                "user_id": str(user_id),
+                "user_id": clean_user_id,
                 "tipo": tipo,
                 "conteudo": conteudo,
                 "updated_at": datetime.now().isoformat()
             }},
             upsert=True
         )
+        logger.info(f"✅ Plano de {tipo} salvo com sucesso para o usuário {clean_user_id}")
         return True
     except Exception as e:
-        logger.error(f"Erro ao salvar plano {tipo}: {e}")
+        logger.error(f"Erro ao salvar plano {tipo} para {user_id}: {e}")
         return False
 
 def ler_plano(user_id: str, tipo: str):
+    """
+    Recupera o plano mais recente de um tipo específico.
+    [AURA UPDATE] Retorna o conteúdo estruturado para o frontend.
+    """
     if mongo_db is None: return {}
     try:
-        doc = mongo_db["plans"].find_one({"user_id": str(user_id), "tipo": tipo})
-        return doc.get("conteudo", {}) if doc else {}
+        clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
+        doc = mongo_db["plans"].find_one({"user_id": clean_user_id, "tipo": tipo})
+        if doc:
+            return doc.get("conteudo", {})
+        return {}
     except Exception as e:
-        logger.error(f"Erro ao ler plano {tipo}: {e}")
+        logger.error(f"Erro ao ler plano {tipo} para {user_id}: {e}")
         return {}
 
 # ==============================================================
@@ -222,6 +235,9 @@ if mongo_db is not None:
             
         if "xp_total_-1" not in indices_atuais:
             colecao_usuarios.create_index([("xp_total", -1)])
+            
+        # Índice para busca rápida de planos por usuário e tipo
+        mongo_db["plans"].create_index([("user_id", 1), ("tipo", 1)])
             
         logger.info("⚡ Índices de performance do MongoDB validados com segurança.")
     except Exception as e:
