@@ -18,13 +18,13 @@ logger = logging.getLogger("AURA_APP")
 def create_app():
     """
     Fábrica da Aplicação: Configura segurança, rotas e tratamento de erros.
-    Garante que a nova era de treinos híbridos 3.0.0 funcione sem bloqueios.
+    Garante que a nova era de treinos híbridos 3.0.0 e Mercado Aura funcione sem bloqueios.
     """
     app = Flask(__name__)
     
-    # 1. Segurança e CORS (Otimizado para Planos Estruturados)
+    # 1. Segurança e CORS (Otimizado para Planos Estruturados e Mercado)
     # [AURA FIX] Ajustado para garantir que o Base44 consiga enviar Authorization Headers sem bloqueio.
-    # Expondo cabeçalhos para permitir métricas de telemetria da IA no frontend.
+    # Expondo cabeçalhos para permitir métricas de telemetria da IA e dados de frete no frontend.
     CORS(app, resources={r"/*": {
         "origins": "*",
         "allow_headers": ["Authorization", "Content-Type", "X-Requested-With"],
@@ -33,7 +33,8 @@ def create_app():
     }})
 
     # 2. Registro de Rotas (Blueprints)
-    # Organizamos com prefixos para evitar conflitos de URL
+    # Organizamos com prefixos para evitar conflitos de URL. 
+    # [AURA LOGISTICS] As novas rotas de frete/webhook adicionadas ao api_bp serão carregadas aqui.
     app.register_blueprint(api_bp)                        # Prefixo definido no arquivo: /api
     app.register_blueprint(strava_bp, url_prefix='/strava') # Forçamos o prefixo /strava
 
@@ -43,9 +44,10 @@ def create_app():
         return jsonify({
             "status": "online",
             "system": "Aura Performance OS",
-            "version": "3.0.0-Hybrid", # Atualizado para a nova era de IA Robusta
+            "version": "3.0.0-Hybrid", # Atualizado para a nova era de IA Robusta e Logística
             "env": os.getenv("FLASK_ENV", "production"),
-            "engine": "OpenAI-GPT-4o-Mini-Robust"
+            "engine": "OpenAI-GPT-4o-Mini-Robust",
+            "features": ["Marketplace", "Melhor Envio Integration", "Asaas Webhooks"]
         })
 
     # 4. Tratamento Global de Erros (Evita crash no App)
@@ -55,16 +57,19 @@ def create_app():
 
     @app.errorhandler(400)
     def bad_request(e):
-        return jsonify({"erro": "Requisição mal formatada"}), 400
+        return jsonify({"erro": "Requisição mal formatada ou parâmetros de frete ausentes"}), 400
 
     @app.errorhandler(500)
     def server_error(e):
         logger.error(f"❌ Erro Crítico Interno: {e}")
         return jsonify({"erro": "Falha interna no servidor Aura. Verifique os logs no Render."}), 500
 
-    # Log de Inicialização de Segurança
+    # Log de Inicialização de Segurança e Logística
     if not os.getenv("MONGODB_URI"):
         logger.warning("⚠️ MONGODB_URI não detectada! O banco de dados ficará offline.")
+    
+    if not os.getenv("MELHOR_ENVIO_TOKEN"):
+        logger.warning("⚠️ MELHOR_ENVIO_TOKEN ausente! O cálculo de frete não funcionará.")
 
     return app
 

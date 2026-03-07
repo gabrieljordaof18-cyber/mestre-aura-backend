@@ -124,7 +124,10 @@ def obter_schema_padrao_global() -> Dict[str, Any]:
     }
 
 def obter_schema_padrao_produto() -> Dict[str, Any]:
-    """Define a estrutura de um item na loja do Aura."""
+    """
+    Define a estrutura de um item na loja do Aura.
+    [AURA LOGISTICS] Adicionado suporte para dimensões e peso exigidos pelo Melhor Envio.
+    """
     return {
         "id": "",
         "nome": "",
@@ -134,5 +137,43 @@ def obter_schema_padrao_produto() -> Dict[str, Any]:
         "nivel_minimo": 1,
         "imagem_url": "",
         "categoria": "destaque",
-        "estoque": True
+        "estoque": True,
+        # --- CAMPOS DE LOGÍSTICA ---
+        "peso_kg": 0.5,           # Peso padrão para cálculos (mínimo sugerido 0.3)
+        "largura_cm": 15,         # Dimensões para cubagem
+        "altura_cm": 10,
+        "comprimento_cm": 20,
+        "cep_origem": "74000000"  # CEP de Goiânia por padrão
+    }
+
+def obter_schema_padrao_pedido() -> Dict[str, Any]:
+    """
+    Define a estrutura de um pedido registrado no MongoDB.
+    [AURA LOGISTICS] Inclui campos para rastreio e separação de frete.
+    """
+    agora_iso = datetime.now().isoformat()
+    return {
+        "user_id": "",
+        "asaas_id": "",           # ID da cobrança no Asaas
+        "customer_id": "",        # ID do cliente no Asaas
+        "status": "PENDING",      # PENDING, RECEIVED, OVERDUE
+        "valor_produtos": 0.0,
+        "valor_frete": 0.0,       # Separado para transparência na planilha
+        "valor_total": 0.0,       # produtos + frete
+        "metodo": "pix",
+        "transportadora": "",     # Ex: Jadlog, Correios
+        "servico_logistico": "",  # Ex: .Package, .SEDEX
+        "codigo_rastreio": "",
+        "endereco_entrega": {
+            "cep": "",
+            "rua": "",
+            "numero": "",
+            "bairro": "",
+            "cidade": "",
+            "estado": ""
+        },
+        "itens": [],              # Lista de IDs e quantidades
+        "created_at": agora_iso,
+        "updated_at": agora_iso,
+        "versao_os": "3.0.0-Hybrid"
     }

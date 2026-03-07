@@ -102,7 +102,7 @@ def criar_ou_buscar_cliente(usuario_dados: dict) -> str:
 def criar_cobranca(dados_pagamento: dict) -> dict:
     """
     Gera a cobrança (PIX ou Cartão) e SALVA NO MONGODB.
-    [AURA ROBUST] Agora vincula o tipo de plano ao contexto do atleta.
+    [AURA LOGISTICS] Agora separa valor de frete e armazena transportadora.
     """
     headers = get_headers()
     
@@ -123,9 +123,12 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     billing_type = "PIX" if metodo == 'pix' else "CREDIT_CARD"
     
     try:
-        valor_float = float(dados_pagamento.get('valor', 0))
+        # [AURA LOGISTICS] Garantindo que o total seja a soma de produtos + frete
+        valor_produtos = float(dados_pagamento.get('valor_produtos', dados_pagamento.get('valor', 0)))
+        valor_frete = float(dados_pagamento.get('valor_frete', 0))
+        total_cobranca = valor_produtos + valor_frete
     except (ValueError, TypeError):
-        return {"erro": "Valor de pagamento inválido."}
+        return {"erro": "Valores de pagamento inválidos."}
     
     # Vencimento padrão: 24h para PIX, imediato para Cartão
     vencimento = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -133,9 +136,9 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
     payload = {
         "customer": customer_id,
         "billingType": billing_type,
-        "value": valor_float,
+        "value": total_cobranca,
         "dueDate": vencimento,
-        "description": f"Aura OS Robust: {dados_pagamento.get('descricao', 'Upgrade Performance')}",
+        "description": f"Aura Mercado: {dados_pagamento.get('descricao', 'Pedido Produtos')}",
         "externalReference": user_id 
     }
 
@@ -153,23 +156,27 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         payment_id = data_asaas['id']
 
         # 4. PERSISTÊNCIA (Sincronização MongoDB Atlas)
+        # Incluímos detalhes logísticos para a futura integração com Google Sheets
         if mongo_db is not None and user_id:
             try:
                 novo_pedido = {
                     "user_id": user_id,
                     "asaas_id": payment_id,
                     "customer_id": customer_id,
-                    "valor": valor_float,
+                    "valor_produtos": valor_produtos,
+                    "valor_frete": valor_frete,
+                    "valor_total": total_cobranca,
                     "metodo": metodo,
                     "status": "PENDING",
-                    "tipo_plano": dados_pagamento.get('tipo_plano', 'PRO'),
-                    "descricao": dados_pagamento.get('descricao', 'Upgrade Aura'),
+                    "transportadora": dados_pagamento.get('transportadora', 'N/A'),
+                    "servico_logistico": dados_pagamento.get('servico', 'Padrão'),
+                    "endereco_entrega": usuario_info.get('endereco', {}),
                     "versao_os": "3.0.0-Hybrid",
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
                 }
                 mongo_db["pedidos"].insert_one(novo_pedido)
-                logger.info(f"📦 Pedido {payment_id} registrado no Atlas para {user_id}")
+                logger.info(f"📦 Pedido {payment_id} registrado com Frete R$ {valor_frete} no Atlas.")
             except Exception as mongo_err:
                 logger.error(f"⚠️ Erro ao persistir pedido: {mongo_err}")
 
@@ -184,7 +191,8 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
                     "tipo": "pix",
                     "payload_pix": qr_data.get('payload'),
                     "imagem_qr": qr_data.get('encodedImage'),
-                    "vencimento": vencimento
+                    "vencimento": vencimento,
+                    "total": total_cobranca
                 }
         
         return {
@@ -192,7 +200,8 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
             "id_pagamento": payment_id,
             "tipo": "cartao",
             "link_pagamento": data_asaas.get('invoiceUrl'),
-            "vencimento": vencimento
+            "vencimento": vencimento,
+            "total": total_cobranca
         }
 
     except Exception as e:

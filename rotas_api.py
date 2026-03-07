@@ -16,6 +16,9 @@ from logic import processar_comando
 from logic_feedback import gerar_feedback_emocional
 from logic_asaas import criar_cobranca
 
+# [AURA LOGISTICS] Importação do novo serviço de frete
+from logic_frete import calcular_cotacao_frete
+
 # Configuração de Logs
 logger = logging.getLogger("AURA_API_ROTAS")
 
@@ -225,7 +228,7 @@ def feedback(current_user_id):
     return jsonify({"texto": gerar_feedback_emocional(current_user_id)})
 
 # ===================================================
-# 💳 PAGAMENTOS (ASAAS)
+# 💳 PAGAMENTOS E LOGÍSTICA
 # ===================================================
 
 @api_bp.route('/pagamento/criar', methods=['POST'])
@@ -233,4 +236,68 @@ def feedback(current_user_id):
 def criar_pagamento(current_user_id):
     dados = request.get_json(force=True)
     dados['user_id'] = current_user_id
+    # A lógica de criar_cobranca agora deve ser capaz de lidar com frete se enviado no payload
     return jsonify(criar_cobranca(dados))
+
+@api_bp.route('/frete/cotar', methods=['POST'])
+@token_required
+def rota_cotar_frete(current_user_id):
+    """
+    Endpoint para cotação de frete no Melhor Envio.
+    Espera: { "cep": "00000000", "itens": [{ "id": "uuid", "quantidade": 1 }] }
+    """
+    try:
+        dados = request.get_json(force=True)
+        cep_destino = dados.get("cep")
+        itens_checkout = dados.get("itens", [])
+
+        if not cep_destino or not itens_checkout:
+            return jsonify({"erro": "CEP de destino ou itens do carrinho ausentes."}), 400
+
+        # Busca detalhes físicos dos produtos no Banco Aura
+        produtos_detalhes = []
+        for item in itens_checkout:
+            # Busca na coleção 'produtos' (conforme definido no schema.py)
+            prod_doc = mongo_db["produtos"].find_one({"id": item["id"]})
+            if prod_doc:
+                # Injeta a quantidade vinda do carrinho para o cálculo de peso total
+                prod_doc["quantidade"] = item.get("quantidade", 1)
+                produtos_detalhes.append(prod_doc)
+
+        if not produtos_detalhes:
+            return jsonify({"erro": "Nenhum produto válido encontrado para cotação."}), 404
+
+        # Chama o motor logístico logic_frete
+        opcoes = calcular_cotacao_frete(cep_destino, produtos_detalhes)
+        return jsonify(opcoes)
+
+    except Exception as e:
+        logger.error(f"Erro ao cotar frete para {current_user_id}: {e}")
+        return jsonify({"erro": "Falha interna no motor de logística."}), 500
+
+@api_bp.route('/webhook/asaas', methods=['POST'])
+def webhook_asaas():
+    """
+    Webhook para receber confirmações de pagamento do Asaas.
+    Aqui disparamos o aviso ao lojista e o registro na planilha.
+    """
+    try:
+        dados = request.get_json(force=True)
+        evento = dados.get("event")
+        payment = dados.get("payment", {})
+        
+        # Se o pagamento foi confirmado
+        if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
+            payment_id = payment.get("id")
+            # Buscar o pedido no MongoDB para pegar os dados de frete salvos na criação
+            pedido = mongo_db["pedidos"].find_one({"asaas_id": payment_id})
+            
+            if pedido:
+                logger.info(f"✅ Pagamento confirmado para pedido {pedido.get('asaas_id')}. Iniciando logística.")
+                # Aqui você pode chamar a função de disparar planilha ou e-mail pro lojista
+                # Ex: registrar_venda_planilha(pedido)
+                
+        return jsonify({"status": "received"}), 200
+    except Exception as e:
+        logger.error(f"Erro no webhook Asaas: {e}")
+        return jsonify({"erro": "Internal Error"}), 500

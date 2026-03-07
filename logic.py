@@ -33,7 +33,7 @@ else:
     logger.warning("⚠️ OPENAI_API_KEY ausente no .env do Render. O chat ficará offline.")
 
 # ======================================================
-# 🛠️ FERRAMENTAS DO MESTRE (DIETAS E TREINOS ROBUSTOS)
+# 🛠️ FERRAMENTAS DO MESTRE (DIETAS, TREINOS E LOGÍSTICA)
 # ======================================================
 
 SCHEMA_EXERCICIO = {
@@ -93,6 +93,21 @@ TOOLS_AURA = [
                 "required": ["foco_atual", "segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_mercado_aura",
+            "description": "Busca produtos, suplementos ou equipamentos no Mercado Aura para o usuário. Use para informar preços e disponibilidade.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "termo_busca": {"type": "string", "description": "Ex: Creatina, Camiseta, Shaker"},
+                    "categoria": {"type": "string", "enum": ["Suplementos", "Vestuário", "Equipamentos"]}
+                },
+                "required": ["termo_busca"]
+            }
+        }
     }
 ]
 
@@ -134,10 +149,11 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             f"Estado Bio: {estado_bio} (Score: {score_bio})\n\n"
             f"DIRETRIZES TÉCNICAS:\n"
             f"1. TREINOS: Devem ser complexos e variados. Cada dia de treino deve ter entre 5 e 10 exercícios.\n"
-            f"2. HIBRIDISMO: Se o atleta pratica Corrida, Ciclismo ou Natação, integre isso na planilha semanal de forma inteligente (Ex: Treino de perna + 20min de bike).\n"
-            f"3. TOOLS: Use obrigatoriamente as TOOLS para Dietas e Treinos. NUNCA liste os exercícios no chat.\n"
+            f"2. HIBRIDISMO: Se o atleta pratica Corrida, Ciclismo ou Natação, integre isso na planilha semanal de forma inteligente.\n"
+            f"3. TOOLS: Use as TOOLS para Dietas, Treinos e Mercado. NUNCA liste os exercícios ou preços manualmente se puder usar uma tool.\n"
             f"4. RESPOSTA PÓS-TOOL: Responda exatamente: 'Treino estruturado! Confira a seção 'Treinos' logo acima.' ou 'Dieta estruturada! Confira a seção 'Dieta' logo acima.'.\n"
-            f"5. TOM: Se score bio < 40, reduza o volume e aumente o descanso. Se > 80, prescreva alta intensidade."
+            f"5. LOGÍSTICA: Informe ao usuário que o Mercado Aura entrega em todo o Brasil com cálculo de frete automático via Melhor Envio no checkout.\n"
+            f"6. TOM: Profissional, motivador e focado em dados."
         )
     }
 
@@ -192,6 +208,19 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
             elif nome_func == "salvar_novo_treino":
                 if salvar_plano(user_id, "treino", args):
                     respostas.append("Treino estruturado! Confira a seção 'Treinos' logo acima.")
+            
+            elif nome_func == "consultar_mercado_aura":
+                # [AURA LOGISTICS] Garantindo que a busca retorne dados de frete
+                termo = args.get("termo_busca")
+                produtos = list(mongo_db["produtos"].find({"nome": {"$regex": termo, "$options": "i"}}).limit(3))
+                if produtos:
+                    resp_prod = "Encontrei no Mercado Aura:\n"
+                    for p in produtos:
+                        resp_prod += f"- {p['nome']}: R$ {p['preco_final']} (Frete calculado no checkout)\n"
+                    respostas.append(resp_prod)
+                else:
+                    respostas.append("Não encontrei esse item específico no Mercado agora, mas temos opções similares em 'Vestuário'.")
+                    
         except Exception as e:
             logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")
             
