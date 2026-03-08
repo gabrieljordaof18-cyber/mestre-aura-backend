@@ -33,11 +33,9 @@ def create_app():
     }})
 
     # 2. Registro de Rotas (Blueprints)
+    # [AURA FIX] Centralizamos o prefixo /api aqui para evitar o erro 404 e duplicidade /api/api
     # Organizamos com prefixos para evitar conflitos de URL. 
-    # [AURA FIX] Registro simplificado do api_bp. 
-    # O prefixo '/api' agora é controlado internamente pelo blueprint em rotas_api.py.
-    # Isso elimina o erro 404 no Render ao tentar acessar /api/frete/cotar.
-    app.register_blueprint(api_bp)                        
+    app.register_blueprint(api_bp, url_prefix='/api')                        
     app.register_blueprint(strava_bp, url_prefix='/strava') 
 
     # 3. Rota Raiz (Health Check & Version Control)

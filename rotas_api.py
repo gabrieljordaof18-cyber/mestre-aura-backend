@@ -263,31 +263,33 @@ def rota_cotar_frete(current_user_id):
             # [AURA FIX] Busca na coleção correta 'ProdutosLoja' usando ObjectId
             try:
                 prod_id = str(item["id"]).strip()
+                # Verifica se o ID é um ObjectId válido antes de consultar
+                if not ObjectId.is_valid(prod_id):
+                    logger.warning(f"ID ignorado por formato inválido: {prod_id}")
+                    continue
+
                 prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
                 
                 if prod_doc:
-                    # Injeta a quantidade vinda do carrinho para o cálculo de peso total
-                    prod_doc["quantidade"] = item.get("quantidade", 1)
-                    
-                    # [AURA FIX - MAPEAMENTO] Traduz os campos do Banco para o que o logic_frete.py espera
-                    # Também removemos o ObjectId bruto para evitar erro de serialização.
+                    # [AURA FIX - MAPEAMENTO] Traduz os campos do Banco (_cm, _kg) para os nomes curtos esperados pelo motor
+                    # Também converte o ObjectId bruto para string para evitar erro de serialização JSON
                     item_traduzido = {
                         "id": str(prod_doc["_id"]),
-                        "quantidade": prod_doc["quantidade"],
-                        "peso": prod_doc.get("peso_kg", 0.5),
-                        "largura": prod_doc.get("largura_cm", 15),
-                        "altura": prod_doc.get("altura_cm", 10),
-                        "comprimento": prod_doc.get("comprimento_cm", 20),
-                        "preco": prod_doc.get("preco_aura", prod_doc.get("preco_final", 0))
+                        "quantidade": int(item.get("quantidade", 1)),
+                        "weight": float(prod_doc.get("peso_kg", 0.5)),
+                        "width": float(prod_doc.get("largura_cm", 15)),
+                        "height": float(prod_doc.get("altura_cm", 10)),
+                        "length": float(prod_doc.get("comprimento_cm", 20)),
+                        "insurance_value": float(prod_doc.get("preco_aura", prod_doc.get("preco", 0)))
                     }
                     produtos_detalhes.append(item_traduzido)
             except Exception as inner_e:
-                logger.warning(f"ID de produto inválido ignorado: {item.get('id')}. Erro: {inner_e}")
+                logger.warning(f"Erro ao processar item {item.get('id')}: {inner_e}")
 
         if not produtos_detalhes:
             return jsonify({"erro": "Nenhum produto válido encontrado para cotação."}), 404
 
-        # Chama o motor logístico logic_frete com os nomes de campos já corrigidos
+        # Chama o motor logístico logic_frete com os campos já normalizados
         opcoes = calcular_cotacao_frete(cep_destino, produtos_detalhes)
         return jsonify(opcoes)
 

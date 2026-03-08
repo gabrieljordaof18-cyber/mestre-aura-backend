@@ -28,17 +28,18 @@ def calcular_cotacao_frete(cep_destino, itens_carrinho):
         "products": []
     }
 
+    # [AURA FIX] Mapeamento Unificado de Chaves para garantir cubagem
     # Adicionando os produtos do carrinho ao cálculo de cubagem
     for item in itens_carrinho:
-        # Prioriza os campos específicos do schema.py se disponíveis
+        # Prioriza os campos específicos do Melhor Envio, depois os do schema, depois genéricos
         payload["products"].append({
-            "id": str(item.get("id")),
-            "width": item.get("largura_cm", item.get("largura", 15)),
-            "height": item.get("altura_cm", item.get("altura", 10)),
-            "length": item.get("comprimento_cm", item.get("comprimento", 20)),
-            "weight": item.get("peso_kg", item.get("peso", 0.5)),
-            "insurance_value": item.get("preco_final", item.get("preco", 0)),
-            "quantity": item.get("quantidade", 1)
+            "id": str(item.get("id") or item.get("_id", "prod_aura")),
+            "width": float(item.get("width") or item.get("largura_cm") or item.get("largura") or 15),
+            "height": float(item.get("height") or item.get("altura_cm") or item.get("altura") or 10),
+            "length": float(item.get("length") or item.get("comprimento_cm") or item.get("comprimento") or 20),
+            "weight": float(item.get("weight") or item.get("peso_kg") or item.get("peso") or 0.5),
+            "insurance_value": float(item.get("insurance_value") or item.get("preco_aura") or item.get("preco") or 0),
+            "quantity": int(item.get("quantity") or item.get("quantidade") or 1)
         })
 
     headers = {
@@ -49,13 +50,18 @@ def calcular_cotacao_frete(cep_destino, itens_carrinho):
     }
 
     try:
+        # Registra o envio dos dados para monitoramento interno no Render
+        logger.info(f"🚚 Enviando cotação para Melhor Envio - CEP Destino: {cep_destino}")
+        
         response = requests.post(MELHOR_ENVIO_URL, json=payload, headers=headers)
+        
         if response.status_code == 200:
             # Retorna a lista de serviços (Jadlog, Sedex, etc.)
             return response.json()
         else:
-            logger.error(f"Erro Melhor Envio: {response.text}")
+            logger.error(f"❌ Erro Melhor Envio ({response.status_code}): {response.text}")
             return {"erro": "Não foi possível calcular o frete para este CEP."}
+            
     except Exception as e:
-        logger.error(f"Falha na conexão com Melhor Envio: {e}")
+        logger.error(f"🔥 Falha na conexão com Melhor Envio: {e}")
         return {"erro": "Erro de conexão com o servidor de frete."}
