@@ -210,16 +210,20 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
                     respostas.append("Treino estruturado! Confira a seção 'Treinos' logo acima.")
             
             elif nome_func == "consultar_mercado_aura":
-                # [AURA LOGISTICS] Garantindo que a busca retorne dados de frete
+                # [AURA FIX] Alterado nome da coleção para 'ProdutosLoja'
                 termo = args.get("termo_busca")
-                produtos = list(mongo_db["produtos"].find({"nome": {"$regex": termo, "$options": "i"}}).limit(3))
+                # Busca na coleção correta sincronizada com o Base44
+                produtos = list(mongo_db["ProdutosLoja"].find({"nome": {"$regex": termo, "$options": "i"}}).limit(3))
+                
                 if produtos:
                     resp_prod = "Encontrei no Mercado Aura:\n"
                     for p in produtos:
-                        resp_prod += f"- {p['nome']}: R$ {p['preco_final']} (Frete calculado no checkout)\n"
+                        # [AURA FIX] Prioriza preco_aura conforme nova lógica financeira
+                        preco = p.get("preco_aura") or p.get("preco_original") or 0
+                        resp_prod += f"- {p['nome']}: R$ {preco:.2f} (Logística Melhor Envio disponível no checkout)\n"
                     respostas.append(resp_prod)
                 else:
-                    respostas.append("Não encontrei esse item específico no Mercado agora, mas temos opções similares em 'Vestuário'.")
+                    respostas.append("Não encontrei esse item específico no Mercado agora, mas verifique as categorias 'Suplementos' ou 'Vestuário'.")
                     
         except Exception as e:
             logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")

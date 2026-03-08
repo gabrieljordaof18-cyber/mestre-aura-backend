@@ -6,6 +6,7 @@ from functools import wraps
 from datetime import datetime
 from typing import Dict, Any
 from flask import request, jsonify, Blueprint
+from bson.objectid import ObjectId # [AURA FIX] Importação necessária para busca por _id
 
 # --- IMPORTAÇÕES DA NOVA ARQUITETURA ---
 from data_user import carregar_memoria, salvar_memoria
@@ -65,8 +66,8 @@ def get_status_jogador(current_user_id):
         if not dados: 
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
-        # Sincronização direta com a RAIZ do seu MongoDB
-        xp_atual = int(dados.get("xp_total", 0))
+        # [AURA FIX] Inicialização correta das variáveis para evitar erro de Pylance
+        xp_total = int(dados.get("xp_total", 0))
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
         cristais = int(dados.get("saldo_cristais", 0))
@@ -76,7 +77,7 @@ def get_status_jogador(current_user_id):
         xp_prox = XP_BASE * nivel_atual
         xp_anterior = XP_BASE * (nivel_atual - 1)
         range_nivel = xp_prox - xp_anterior
-        xp_no_nivel = xp_atual - xp_anterior
+        xp_no_nivel = xp_total - xp_anterior
         
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
@@ -84,7 +85,7 @@ def get_status_jogador(current_user_id):
             "id": current_user_id,
             "nome": nome_atleta,
             "foto": dados.get("foto_perfil", ""),
-            "xp_total": xp_atual,
+            "xp_total": xp_total,
             "saldo_cristais": cristais,
             "nivel": nivel_atual,
             "barra_progresso": max(0, min(100, progresso)),
@@ -257,12 +258,20 @@ def rota_cotar_frete(current_user_id):
         # Busca detalhes físicos dos produtos no Banco Aura
         produtos_detalhes = []
         for item in itens_checkout:
-            # Busca na coleção 'produtos' (conforme definido no schema.py)
-            prod_doc = mongo_db["produtos"].find_one({"id": item["id"]})
-            if prod_doc:
-                # Injeta a quantidade vinda do carrinho para o cálculo de peso total
-                prod_doc["quantidade"] = item.get("quantidade", 1)
-                produtos_detalhes.append(prod_doc)
+            # [AURA FIX] Alterado nome da coleção para 'ProdutosLoja' e busca pelo '_id' do MongoDB
+            try:
+                prod_id = str(item["id"]).strip()
+                # Verifica se o banco mestre_aura_db tem a coleção ProdutosLoja
+                prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
+                
+                if prod_doc:
+                    # Injeta a quantidade vinda do carrinho para o cálculo de peso total
+                    prod_doc["quantidade"] = item.get("quantidade", 1)
+                    # Converte o ObjectId em string para o motor logic_frete
+                    prod_doc["id"] = str(prod_doc["_id"])
+                    produtos_detalhes.append(prod_doc)
+            except Exception as inner_e:
+                logger.warning(f"ID de produto inválido ignorado: {item.get('id')}. Erro: {inner_e}")
 
         if not produtos_detalhes:
             return jsonify({"erro": "Nenhum produto válido encontrado para cotação."}), 404
