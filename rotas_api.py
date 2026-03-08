@@ -23,7 +23,9 @@ from logic_frete import calcular_cotacao_frete
 # Configuração de Logs
 logger = logging.getLogger("AURA_API_ROTAS")
 
-api_bp = Blueprint('api_bp', __name__, url_prefix='/api')
+# [AURA FIX] Removido o url_prefix aqui para evitar conflito com o registro no app.py
+# Agora as rotas funcionam como esperado: /api/frete/cotar e não /api/api/frete/cotar
+api_bp = Blueprint('api_bp', __name__)
 
 # ===================================================
 # 🔐 MIDDLEWARE DE AUTENTICAÇÃO (SEGURANÇA 2.0)
@@ -58,7 +60,7 @@ def token_required(f):
 # 👤 STATUS E PROGRESSÃO (MULTIJOGADOR)
 # ===================================================
 
-@api_bp.route('/usuario/status', methods=['GET'])
+@api_bp.route('/api/usuario/status', methods=['GET'])
 @token_required
 def get_status_jogador(current_user_id):
     try:
@@ -66,7 +68,7 @@ def get_status_jogador(current_user_id):
         if not dados: 
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
-        # [AURA FIX] Inicialização correta das variáveis para evitar erro de Pylance
+        # [AURA FIX] Inicialização correta das variáveis conforme o schema 3.0
         xp_total = int(dados.get("xp_total", 0))
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
@@ -100,7 +102,7 @@ def get_status_jogador(current_user_id):
 # 🍎 CONSULTA DE PLANOS (ROBUSTEZ HÍBRIDA)
 # ===================================================
 
-@api_bp.route('/usuario/plano/treino', methods=['GET'])
+@api_bp.route('/api/usuario/plano/treino', methods=['GET'])
 @token_required
 def get_plano_treino(current_user_id):
     """Retorna o último treino híbrido gerado pela IA."""
@@ -113,7 +115,7 @@ def get_plano_treino(current_user_id):
         logger.error(f"Erro ao ler treino: {e}")
         return jsonify({"erro": "Erro ao carregar treino"}), 500
 
-@api_bp.route('/usuario/plano/dieta', methods=['GET'])
+@api_bp.route('/api/usuario/plano/dieta', methods=['GET'])
 @token_required
 def get_plano_dieta(current_user_id):
     """Retorna a última dieta estruturada gerada pela IA."""
@@ -126,7 +128,7 @@ def get_plano_dieta(current_user_id):
         logger.error(f"Erro ao ler dieta: {e}")
         return jsonify({"erro": "Erro ao carregar dieta"}), 500
 
-@api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
+@api_bp.route('/api/usuario/atualizar_biometria', methods=['POST'])
 @token_required
 def atualizar_biometria(current_user_id):
     """Atualiza dados físicos para que a IA gere treinos com volume correto."""
@@ -146,7 +148,7 @@ def atualizar_biometria(current_user_id):
 # ⚔️ CLÃS E RANKING (SOCIAL)
 # ===================================================
 
-@api_bp.route('/cla/ranking', methods=['GET'])
+@api_bp.route('/api/cla/ranking', methods=['GET'])
 def get_ranking_cla():
     try:
         ranking = obter_ranking_global(limite=50) 
@@ -159,7 +161,7 @@ def get_ranking_cla():
 # 🧠 COMANDO DO MESTRE (IA HÍBRIDA)
 # ===================================================
 
-@api_bp.route('/comando', methods=['POST'])
+@api_bp.route('/api/comando', methods=['POST'])
 @token_required
 def comando(current_user_id):
     try:
@@ -178,12 +180,12 @@ def comando(current_user_id):
 # 🎮 MISSÕES E GAMIFICAÇÃO
 # ===================================================
 
-@api_bp.route('/missoes', methods=['GET'])
+@api_bp.route('/api/missoes', methods=['GET'])
 @token_required
 def listar_missoes(current_user_id):
     return jsonify({"missoes": gerar_missoes_diarias(current_user_id)})
 
-@api_bp.route('/concluir_missao', methods=['POST'])
+@api_bp.route('/api/concluir_missao', methods=['POST'])
 @token_required
 def concluir_missao(current_user_id):
     try:
@@ -215,7 +217,7 @@ def concluir_missao(current_user_id):
 # ⚕️ BIOHACKING E SINCRONIZAÇÃO
 # ===================================================
 
-@api_bp.route('/sincronizar_dinamico', methods=['POST'])
+@api_bp.route('/api/sincronizar_dinamico', methods=['POST'])
 @token_required
 def sincronizar_dinamico(current_user_id):
     from data_sensores import obter_dados_fisiologicos
@@ -223,7 +225,7 @@ def sincronizar_dinamico(current_user_id):
     calcular_e_atualizar_equilibrio(current_user_id)
     return jsonify({"status": "Sincronizado", "dados": novos_dados})
 
-@api_bp.route('/feedback', methods=['GET'])
+@api_bp.route('/api/feedback', methods=['GET'])
 @token_required
 def feedback(current_user_id):
     return jsonify({"texto": gerar_feedback_emocional(current_user_id)})
@@ -232,15 +234,15 @@ def feedback(current_user_id):
 # 💳 PAGAMENTOS E LOGÍSTICA
 # ===================================================
 
-@api_bp.route('/pagamento/criar', methods=['POST'])
+@api_bp.route('/api/pagamento/criar', methods=['POST'])
 @token_required
 def criar_pagamento(current_user_id):
     dados = request.get_json(force=True)
     dados['user_id'] = current_user_id
-    # A lógica de criar_cobranca agora deve ser capaz de lidar com frete se enviado no payload
+    # A lógica de criar_cobranca agora deve ser capaz de lidar com frete
     return jsonify(criar_cobranca(dados))
 
-@api_bp.route('/frete/cotar', methods=['POST'])
+@api_bp.route('/api/frete/cotar', methods=['POST'])
 @token_required
 def rota_cotar_frete(current_user_id):
     """
@@ -258,10 +260,9 @@ def rota_cotar_frete(current_user_id):
         # Busca detalhes físicos dos produtos no Banco Aura
         produtos_detalhes = []
         for item in itens_checkout:
-            # [AURA FIX] Alterado nome da coleção para 'ProdutosLoja' e busca pelo '_id' do MongoDB
+            # [AURA FIX] Busca na coleção correta 'ProdutosLoja' usando ObjectId
             try:
                 prod_id = str(item["id"]).strip()
-                # Verifica se o banco mestre_aura_db tem a coleção ProdutosLoja
                 prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
                 
                 if prod_doc:
@@ -284,27 +285,23 @@ def rota_cotar_frete(current_user_id):
         logger.error(f"Erro ao cotar frete para {current_user_id}: {e}")
         return jsonify({"erro": "Falha interna no motor de logística."}), 500
 
-@api_bp.route('/webhook/asaas', methods=['POST'])
+@api_bp.route('/api/webhook/asaas', methods=['POST'])
 def webhook_asaas():
     """
     Webhook para receber confirmações de pagamento do Asaas.
-    Aqui disparamos o aviso ao lojista e o registro na planilha.
     """
     try:
         dados = request.get_json(force=True)
         evento = dados.get("event")
         payment = dados.get("payment", {})
         
-        # Se o pagamento foi confirmado
         if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
             payment_id = payment.get("id")
-            # Buscar o pedido no MongoDB para pegar os dados de frete salvos na criação
+            # Buscar o pedido no MongoDB para processar logística
             pedido = mongo_db["pedidos"].find_one({"asaas_id": payment_id})
             
             if pedido:
                 logger.info(f"✅ Pagamento confirmado para pedido {pedido.get('asaas_id')}. Iniciando logística.")
-                # Aqui você pode chamar a função de disparar planilha ou e-mail pro lojista
-                # Ex: registrar_venda_planilha(pedido)
                 
         return jsonify({"status": "received"}), 200
     except Exception as e:

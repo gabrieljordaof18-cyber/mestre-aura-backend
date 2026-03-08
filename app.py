@@ -34,9 +34,9 @@ def create_app():
 
     # 2. Registro de Rotas (Blueprints)
     # Organizamos com prefixos para evitar conflitos de URL. 
-    # [AURA LOGISTICS] As novas rotas de frete/webhook adicionadas ao api_bp serão carregadas aqui.
-    app.register_blueprint(api_bp)                        # Prefixo definido no arquivo: /api
-    app.register_blueprint(strava_bp, url_prefix='/strava') # Forçamos o prefixo /strava
+    # [AURA FIX] Registro simplificado do api_bp para evitar duplicação de prefixo /api/api
+    app.register_blueprint(api_bp)                        
+    app.register_blueprint(strava_bp, url_prefix='/strava') 
 
     # 3. Rota Raiz (Health Check & Version Control)
     @app.route('/')
