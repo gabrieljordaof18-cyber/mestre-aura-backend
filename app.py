@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request  # [AURA FIX] Importação do 'request' adicionada aqui
 from flask_cors import CORS
 
 # Importação dos Blueprints (Módulos de Rotas)
@@ -18,7 +18,7 @@ logger = logging.getLogger("AURA_APP")
 def create_app():
     """
     Fábrica da Aplicação: Configura segurança, rotas e tratamento de erros.
-    Garante que a nova era de treinos híbridos 3.0.0 e Mercado Aura funcione sem bloqueios.
+    Garante que a nova era de treinos híbridos 3.1.0 e Mercado Aura funcione sem bloqueios.
     """
     app = Flask(__name__)
     
@@ -33,8 +33,9 @@ def create_app():
     }})
 
     # 2. Registro de Rotas (Blueprints)
-    # [AURA FIX] Centralizamos o prefixo /api aqui para evitar o erro 404 e duplicidade /api/api
-    # Organizamos com prefixos para evitar conflitos de URL. 
+    # [AURA FIX 404] Centralizamos o prefixo /api aqui. 
+    # IMPORTANTE: No arquivo rotas_api.py, as rotas devem ser apenas @api_bp.route('/frete/cotar')
+    # Sem o /api inicial, para evitar que a URL final vire /api/api/frete/cotar.
     app.register_blueprint(api_bp, url_prefix='/api')                        
     app.register_blueprint(strava_bp, url_prefix='/strava') 
 
@@ -44,7 +45,7 @@ def create_app():
         return jsonify({
             "status": "online",
             "system": "Aura Performance OS",
-            "version": "3.0.0-Hybrid", # Atualizado para a nova era de IA Robusta e Logística
+            "version": "3.1.0-ULTIMATE-FIX", # Marcador para confirmar deploy correto
             "env": os.getenv("FLASK_ENV", "production"),
             "engine": "OpenAI-GPT-4o-Mini-Robust",
             "features": ["Marketplace", "Melhor Envio Integration", "Asaas Webhooks"]
@@ -53,7 +54,10 @@ def create_app():
     # 4. Tratamento Global de Erros (Evita crash no App)
     @app.errorhandler(404)
     def not_found(e):
-        return jsonify({"erro": "Rota não encontrada no Aura OS"}), 404
+        # [AURA LOG] Ajuda a identificar qual URL exata está falhando nos logs do Render
+        # O objeto 'request' agora está disponível graças à importação corrigida no topo.
+        logger.warning(f"⚠️ Rota não encontrada: {request.path}")
+        return jsonify({"erro": f"Rota {request.path} não encontrada no Aura OS"}), 404
 
     @app.errorhandler(400)
     def bad_request(e):
