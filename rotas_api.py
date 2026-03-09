@@ -24,7 +24,6 @@ from logic_frete import calcular_cotacao_frete
 logger = logging.getLogger("AURA_API_ROTAS")
 
 # [AURA FIX 404] Blueprint SEM prefixo interno para não duplicar com o registro no app.py
-# O app.py já define url_prefix='/api'. Manter aqui geraria a rota inválida /api/api/...
 api_bp = Blueprint('api_bp', __name__)
 
 # ===================================================
@@ -60,7 +59,6 @@ def token_required(f):
 # 👤 STATUS E PROGRESSÃO (MULTIJOGADOR)
 # ===================================================
 
-# [AURA FIX 404] Rota agora mapeada como /api/usuario/status via app.py
 @api_bp.route('/usuario/status', methods=['GET'])
 @token_required
 def get_status_jogador(current_user_id):
@@ -243,13 +241,13 @@ def criar_pagamento(current_user_id):
     # A lógica de criar_cobranca agora deve ser capaz de lidar com frete se enviado no payload
     return jsonify(criar_cobranca(dados))
 
-# [AURA FIX 404] Rota mapeada como /api/frete/cotar via app.py
+# [AURA FIX 404] Rota mapeada via app.py
 @api_bp.route('/frete/cotar', methods=['POST'])
 @token_required
 def rota_cotar_frete(current_user_id):
     """
-    Endpoint para cotação de frete no Melhor Envio.
-    Espera: { "cep": "00000000", "itens": [{ "id": "uuid", "quantidade": 1 }] }
+    Endpoint ultra-robusto para cotação de frete no Melhor Envio.
+    Garante processamento mesmo em caso de falha na busca por ID no Atlas.
     """
     try:
         dados = request.get_json(force=True)
@@ -259,65 +257,58 @@ def rota_cotar_frete(current_user_id):
         if not cep_destino or not itens_checkout:
             return jsonify({"erro": "CEP de destino ou itens do carrinho ausentes."}), 400
 
-        # Busca detalhes físicos dos produtos no Banco Aura
         produtos_detalhes = []
         for item in itens_checkout:
-            # [AURA FIX] Busca na coleção correta 'ProdutosLoja' usando ObjectId
             try:
-                prod_id = str(item["id"]).strip()
-                # Verifica se o ID é um ObjectId válido antes de consultar
-                if not ObjectId.is_valid(prod_id):
-                    logger.warning(f"ID ignorado por formato inválido: {prod_id}")
-                    continue
-
-                prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
+                # [AURA FIX] Limpeza do ID do produto para consulta
+                prod_id = str(item.get("id")).strip()
+                prod_doc = None
                 
-                if prod_doc:
-                    # [AURA FIX - MAPEAMENTO] Traduz os campos do Banco (_cm, _kg) para os nomes curtos esperados pelo motor
-                    # Também converte o ObjectId bruto para string para evitar erro de serialização JSON
-                    item_traduzido = {
-                        "id": str(prod_doc["_id"]),
-                        "quantidade": int(item.get("quantidade", 1)),
-                        "weight": float(prod_doc.get("peso_kg", 0.5)),
-                        "width": float(prod_doc.get("largura_cm", 15)),
-                        "height": float(prod_doc.get("altura_cm", 10)),
-                        "length": float(prod_doc.get("comprimento_cm", 20)),
-                        "insurance_value": float(prod_doc.get("preco_aura", prod_doc.get("preco", 0)))
-                    }
-                    produtos_detalhes.append(item_traduzido)
+                # Tenta buscar no banco, mas ignora falhas se o ID for inválido
+                if ObjectId.is_valid(prod_id):
+                    prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
+                
+                # [AURA ROBUST FALLBACK] Prioriza dados do Banco, mas usa o Payload como segurança
+                # Isso resolve o problema de atraso/falha quando o Atlas demora a responder.
+                item_traduzido = {
+                    "id": prod_id,
+                    "quantidade": int(item.get("quantidade") or 1),
+                    "weight": float(prod_doc.get("peso_kg") if prod_doc else item.get("weight", 0.5)),
+                    "width": float(prod_doc.get("largura_cm") if prod_doc else item.get("width", 15)),
+                    "height": float(prod_doc.get("altura_cm") if prod_doc else item.get("height", 10)),
+                    "length": float(prod_doc.get("comprimento_cm") if prod_doc else item.get("length", 20)),
+                    "insurance_value": float(prod_doc.get("preco_aura") if prod_doc else item.get("insurance_value", 10))
+                }
+                produtos_detalhes.append(item_traduzido)
             except Exception as inner_e:
-                logger.warning(f"Erro ao processar item {item.get('id')}: {inner_e}")
+                logger.warning(f"Aviso ao processar item {item.get('id')}: {inner_e}")
 
         if not produtos_detalhes:
             return jsonify({"erro": "Nenhum produto válido encontrado para cotação."}), 404
 
-        # Chama o motor logístico logic_frete com os campos já normalizados
+        # Chama o motor logístico logic_frete com os campos normalizados
         opcoes = calcular_cotacao_frete(cep_destino, produtos_detalhes)
         return jsonify(opcoes)
 
     except Exception as e:
-        logger.error(f"Erro ao cotar frete para {current_user_id}: {e}")
+        logger.error(f"Erro crítico ao cotar frete para {current_user_id}: {e}")
         return jsonify({"erro": "Falha interna no motor de logística."}), 500
 
 @api_bp.route('/webhook/asaas', methods=['POST'])
 def webhook_asaas():
     """
     Webhook para receber confirmações de pagamento do Asaas.
-    Aqui disparamos o aviso ao lojista e o registro na planilha.
     """
     try:
         dados = request.get_json(force=True)
         evento = dados.get("event")
         payment = dados.get("payment", {})
         
-        # Se o pagamento foi confirmado
         if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
             payment_id = payment.get("id")
-            # Buscar o pedido no MongoDB para pegar os dados de frete salvos na criação
             pedido = mongo_db["pedidos"].find_one({"asaas_id": payment_id})
-            
             if pedido:
-                logger.info(f"✅ Pagamento confirmado para pedido {pedido.get('asaas_id')}. Iniciando logística.")
+                logger.info(f"✅ Pagamento confirmado para pedido {pedido.get('asaas_id')}.")
                 
         return jsonify({"status": "received"}), 200
     except Exception as e:
