@@ -53,6 +53,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     pool_missoes = []
     if mongo_db is not None:
         try:
+            # Buscamos as missões ativas no Atlas
             cursor = mongo_db["missoes"].find({"ativo": True}, {"_id": 0})
             pool_missoes = list(cursor)
         except Exception as e:
@@ -75,10 +76,14 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
 
     missoes_ativas = []
     for m in selecionadas:
+        # [AURA FIX] Prioriza o Título do MongoDB para evitar o texto genérico "Desafio Aura"
+        # Se m["titulo"] não existir, ele tenta a descrição. Caso ambos falhem, usa o fallback final.
+        titulo_final = m.get("titulo") or m.get("descricao") or "Desafio Aura"
+
         missoes_ativas.append({
             "id": m.get("id"),
-            "titulo": m.get("titulo", "Desafio Aura"),
-            "descricao": m.get("descricao"),
+            "titulo": titulo_final,
+            "descricao": m.get("descricao", "Complete o desafio para evoluir"),
             "xp": m.get("xp", 100),
             "categoria": m.get("categoria", "geral"),
             "icone": m.get("icone", "Target"),
@@ -117,7 +122,7 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     moedas_atuais = int(memoria.get("moedas", 0))
     cristais_atuais = int(memoria.get("saldo_cristais", 0))
 
-    # [AURA FIX] Cristais agora são sempre inteiros
+    # [AURA FIX] Cristais agora são sempre inteiros utilizando divisão inteira //
     ganho_moedas = int(quantidade)
     ganho_cristais = int(quantidade // 10)
 
