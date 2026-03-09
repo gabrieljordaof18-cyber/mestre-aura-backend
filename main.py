@@ -1,6 +1,6 @@
 import os
 import logging
-from app import app # Importa a instância configurada do Flask
+from app import app # Importa a instância única e configurada do Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
@@ -41,7 +41,6 @@ def rotina_diaria_manutencao():
         logger.info(f"🌍 Aura OS operando na versão: {estado_global.get('versao_ia_ativa', 'Legacy')}")
 
         # [AURA ROBUST] Iteração sobre usuários ativos para reset de fadiga
-        # Isso garante que após um treino de 10 exercícios, a recuperação ocorra no novo dia
         colecao_users = mongo_db["usuarios"]
         usuarios_ativos = colecao_users.find({"configuracoes_sistema.onboarding_completo": True})
         
@@ -93,5 +92,5 @@ if __name__ == '__main__':
     else:
         # MODO DESENVOLVIMENTO (MacBook/Local)
         logger.info(f"🛠️ MODO DEV: Aura OS operando via Flask na porta {port}")
-        # Debug=True habilita o Hot Reload para facilitar testes manuais
+        # Usamos a instância importada para rodar localmente
         app.run(host='0.0.0.0', port=port, debug=True)
