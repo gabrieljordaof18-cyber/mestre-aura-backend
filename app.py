@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, jsonify, request 
+from flask import Flask, jsonify, request  # [AURA FIX] Importação do 'request' unificada
 from flask_cors import CORS
 
 # Importação dos Blueprints (Módulos de Rotas)
@@ -31,6 +31,7 @@ CORS(app, resources={r"/*": {
 # 2. Registro de Rotas (Blueprints)
 # [AURA FIX 404] Definimos o prefixo global aqui de forma definitiva. 
 # IMPORTANTE: No arquivo rotas_api.py, as rotas devem ser apenas @api_bp.route('/frete/cotar')
+# [AURA FIX INDENTATION] Linhas alinhadas corretamente para evitar travamento no Render.
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(strava_bp, url_prefix='/strava')
 

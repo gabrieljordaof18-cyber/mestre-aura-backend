@@ -24,6 +24,7 @@ from logic_frete import calcular_cotacao_frete
 logger = logging.getLogger("AURA_API_ROTAS")
 
 # [AURA FIX 404] Blueprint SEM prefixo interno para não duplicar com o registro no app.py
+# O app.py já define url_prefix='/api'. Manter aqui geraria a rota inválida /api/api/...
 api_bp = Blueprint('api_bp', __name__)
 
 # ===================================================
@@ -59,7 +60,7 @@ def token_required(f):
 # 👤 STATUS E PROGRESSÃO (MULTIJOGADOR)
 # ===================================================
 
-# [AURA FIX 404] Removido prefixo /api, pois o app.py já o adiciona
+# [AURA FIX 404] Rota agora mapeada como /api/usuario/status via app.py
 @api_bp.route('/usuario/status', methods=['GET'])
 @token_required
 def get_status_jogador(current_user_id):
@@ -242,7 +243,7 @@ def criar_pagamento(current_user_id):
     # A lógica de criar_cobranca agora deve ser capaz de lidar com frete se enviado no payload
     return jsonify(criar_cobranca(dados))
 
-# [AURA FIX 404] Removido prefixo /api inicial
+# [AURA FIX 404] Rota mapeada como /api/frete/cotar via app.py
 @api_bp.route('/frete/cotar', methods=['POST'])
 @token_required
 def rota_cotar_frete(current_user_id):

@@ -36,8 +36,8 @@ def carregar_memoria_global() -> Dict[str, Any]:
             logger.warning("🌍 Estado Global não encontrado. Criando novo seed...")
             novo_global = obter_schema_padrao_global()
             novo_global["_id"] = ID_GLOBAL
-            # Injeção de metadados da nova era de treinos híbridos
-            novo_global["versao_ia_ativa"] = "3.0.0-Hybrid"
+            # [AURA SYNC] Versão atualizada para bater com app.py (3.2.0-STABLE)
+            novo_global["versao_ia_ativa"] = "3.2.0-Stable"
             novo_global["temporada_atual"] = 1
             
             # Usamos o schema padrão e garantimos a inserção inicial

@@ -27,8 +27,8 @@ try:
         raise ValueError("MONGODB_URI não encontrada no .env")
 
     # Adicionado retryWrites para maior estabilidade no Render/Nuvem
-    # [AURA FIX] Timeout ajustado para evitar que o Render desista da conexão muito rápido
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, retryWrites=True)
+    # [AURA FIX] Timeout aumentado para 15s para evitar falhas em cold starts do Render/Atlas
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=15000, retryWrites=True)
     mongo_client.server_info()
     
     mongo_db = mongo_client["mestre_aura_db"]
@@ -203,7 +203,7 @@ def salvar_plano(user_id: str, tipo: str, conteudo: dict):
                 "tipo": tipo,
                 "conteudo": conteudo,
                 "updated_at": datetime.now().isoformat(),
-                "versao_ia": "3.0.0-Hybrid" # Marcador para a nova robustez
+                "versao_ia": "3.2.0-Stable" # Atualizado para sincronia de versão
             }},
             upsert=True
         )

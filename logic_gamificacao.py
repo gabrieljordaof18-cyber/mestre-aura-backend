@@ -103,8 +103,8 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     Adiciona XP e gerencia a progressão econômica Aura.
     LÓGICA UNIFICADA: 
     - Moedas = XP Ganhos (1:1)
-    - Cristais = XP Ganhos / 10
-    - Bônus de Level Up incluído.
+    - Cristais = XP Ganhos / 10 (Garante inteiro)
+    - Bônus de Level Up incluído com proteção contra loop.
     """
     if not user_id: return {"erro": "ID ausente"}
 
@@ -117,23 +117,26 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     moedas_atuais = int(memoria.get("moedas", 0))
     cristais_atuais = int(memoria.get("saldo_cristais", 0))
 
-    # Aplicação da conversão econômica oficial
-    ganho_moedas = quantidade
-    ganho_cristais = int(quantidade / 10)
+    # [AURA FIX] Cristais agora são sempre inteiros
+    ganho_moedas = int(quantidade)
+    ganho_cristais = int(quantidade // 10)
 
-    xp_atual += quantidade
+    xp_atual += ganho_moedas
     moedas_atuais += ganho_moedas
     cristais_atuais += ganho_cristais
 
     subiu_nivel = False
     bonus_level_up_cristais = 0
     
-    # Lógica de Progressão de Nível (Exponencial Simples)
-    while xp_atual >= (XP_BASE_NIVEL * nivel_atual):
+    # [AURA FIX] Lógica de Progressão com proteção contra looping infinito
+    # Limitamos a subida a no máximo 10 níveis por vez para evitar travamentos de processamento
+    seguranca_loop = 0
+    while xp_atual >= (XP_BASE_NIVEL * nivel_atual) and seguranca_loop < 10:
         xp_atual -= (XP_BASE_NIVEL * nivel_atual)
         nivel_atual += 1
         bonus_level_up_cristais += CRISTAIS_POR_LEVEL_UP
         subiu_nivel = True
+        seguranca_loop += 1
         logger.info(f"🆙 [LEVEL UP] {user_id} atingiu o Nível {nivel_atual}")
 
     # Atualiza o saldo final com bônus de nível
@@ -146,7 +149,9 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     memoria["saldo_cristais"] = cristais_atuais
     
     # Atualiza estatísticas de performance para o perfil
-    if "gamificacao" in memoria and "estatisticas" in memoria["gamificacao"]:
+    if "gamificacao" in memoria:
+        if "estatisticas" not in memoria["gamificacao"]:
+            memoria["gamificacao"]["estatisticas"] = {"missoes_completadas": 0, "total_atividades": 0, "dias_seguidos": 0}
         memoria["gamificacao"]["estatisticas"]["total_atividades"] += 1
 
     salvar_memoria(user_id, memoria)

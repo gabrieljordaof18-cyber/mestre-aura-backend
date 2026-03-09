@@ -28,10 +28,10 @@ def calcular_cotacao_frete(cep_destino, itens_carrinho):
         "products": []
     }
 
-    # [AURA FIX] Mapeamento Unificado de Chaves para garantir cubagem
-    # Adicionando os produtos do carrinho ao cálculo de cubagem
+    # [AURA FIX] Mapeamento Triplo Unificado para garantir cubagem
+    # Este bloco garante que, independente do nome da chave (vinda do banco ou frontend), 
+    # o Melhor Envio receba o parâmetro técnico correto.
     for item in itens_carrinho:
-        # Prioriza os campos específicos do Melhor Envio, depois os do schema, depois genéricos
         payload["products"].append({
             "id": str(item.get("id") or item.get("_id", "prod_aura")),
             "width": float(item.get("width") or item.get("largura_cm") or item.get("largura") or 15),
