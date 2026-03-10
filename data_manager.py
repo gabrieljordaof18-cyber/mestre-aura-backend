@@ -40,22 +40,31 @@ except Exception as e:
     mongo_db = None
 
 # ==============================================================
-# 👤 GERENCIAMENTO DE USUÁRIOS
+# 👤 GERENCIAMENTO DE USUÁRIOS (NATIVE & IAP READY)
 # ==============================================================
 
 def buscar_usuario_por_id(user_id: str):
-    # [AURA FIX] Comparação explícita com None para evitar erro de truth value
+    """Busca o usuário garantindo compatibilidade com IDs do RevenueCat/Base44."""
     if mongo_db is None: 
         logger.error("❌ MongoDB inacessível em buscar_usuario_por_id")
         return None
     try:
-        # [AURA FIX] Limpeza rigorosa para garantir que o ID chegue limpo
+        # [AURA FIX] Limpeza rigorosa para IDs vindos de diferentes headers (JWT/Auth)
         clean_id = str(user_id).strip().replace('"', '').replace("'", "")
+        
+        # Verificação de segurança para evitar erro de ObjectId inválido
+        if not ObjectId.is_valid(clean_id):
+            logger.warning(f"⚠️ ID de usuário inválido recebido: {clean_id}")
+            return None
+
         # Buscamos na coleção 'usuarios' conforme sua estrutura manual no Atlas
         doc = mongo_db["usuarios"].find_one({"_id": ObjectId(clean_id)})
         if doc:
-            # Convertemos para String no retorno para que o JSON do Frontend aceite sem erro
             doc["_id"] = str(doc["_id"])
+            # [AURA SYNC] Fallback imediato se o doc for antigo e não tiver campos de assinatura
+            if "plano" not in doc: doc["plano"] = "free"
+            if "status_assinatura" not in doc: doc["status_assinatura"] = "inativo"
+            
         return doc
     except Exception as e:
         logger.error(f"Erro ao buscar usuário ID {user_id}: {e}")
@@ -64,7 +73,7 @@ def buscar_usuario_por_id(user_id: str):
 def buscar_usuario_por_email(email: str):
     if mongo_db is None: return None
     try:
-        doc = mongo_db["usuarios"].find_one({"email": email})
+        doc = mongo_db["usuarios"].find_one({"email": email.strip().lower()})
         if doc:
             doc["_id"] = str(doc["_id"])
         return doc
@@ -73,15 +82,27 @@ def buscar_usuario_por_email(email: str):
         return None
 
 def criar_novo_usuario(email: str, nome: str, auth_provider="email"):
+    """
+    Cria um novo usuário já com os campos exigidos pela App Store.
+    Garante que novos cadastros via Apple Sign-in funcionem instantaneamente.
+    """
     if mongo_db is None: return None
     
-    novo_user = obter_schema_padrao_usuario(email=email, nome=nome)
+    # Obtém o template base do schema.py
+    novo_user = obter_schema_padrao_usuario(email=email.strip().lower(), nome=nome)
+    
+    # [AURA NEW] Campos obrigatórios para o fluxo nativo 3.3.0
     novo_user["auth_provider"] = auth_provider
+    novo_user["plano"] = "free"
+    novo_user["status_assinatura"] = "inativo"
+    novo_user["data_vencimento"] = ""
     novo_user["created_at"] = datetime.now().isoformat()
+    novo_user["updated_at"] = datetime.now().isoformat()
     
     try:
         resultado = mongo_db["usuarios"].insert_one(novo_user)
         novo_user["_id"] = str(resultado.inserted_id)
+        logger.info(f"🆕 Novo usuário {nome} ({auth_provider}) criado no Atlas.")
         return novo_user
     except Exception as e:
         logger.error(f"Erro ao criar usuário: {e}")
@@ -91,6 +112,10 @@ def atualizar_usuario(user_id: str, dados_atualizacao: dict):
     if mongo_db is None: return False
     try:
         clean_id = str(user_id).strip().replace('"', '').replace("'", "")
+        
+        # Proteção contra ID inválido
+        if not ObjectId.is_valid(clean_id): return False
+
         # Removemos o _id se ele vier nos dados para não dar erro de imutabilidade
         if "_id" in dados_atualizacao:
             del dados_atualizacao["_id"]
@@ -130,7 +155,7 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
             return True
         else:
             if email_strava:
-                user_por_email = colecao_users.find_one({"email": email_strava})
+                user_por_email = colecao_users.find_one({"email": email_strava.strip().lower()})
                 if user_por_email:
                     atualizar_usuario(str(user_por_email["_id"]), {
                         "integracoes.strava.atleta_id": strava_id,
@@ -139,7 +164,12 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
                     })
                     return True
 
-            novo_doc = criar_novo_usuario(email=f"strava_{strava_id}@aura.app", nome=nome, auth_provider="strava")
+            # Cria como 'strava' provider
+            novo_doc = criar_novo_usuario(
+                email=f"strava_{strava_id}@aura.app", 
+                nome=nome, 
+                auth_provider="strava"
+            )
             atualizar_usuario(novo_doc["_id"], {
                 "foto_perfil": foto,
                 "integracoes.strava": {"conectado": True, "atleta_id": strava_id, "tokens": tokens}
@@ -181,11 +211,11 @@ def obter_ranking_global(limite=50):
 def salvar_plano(user_id: str, tipo: str, conteudo: dict):
     """
     Salva ou atualiza um plano estruturado (treino ou dieta).
-    [AURA UPDATE] Agora salva metadados de complexidade e integra com a timeline do atleta.
     """
     if mongo_db is None: return False
     try:
         clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
+        if not ObjectId.is_valid(clean_user_id): return False
         
         # [AURA ROBUST] Inserimos uma cópia no histórico antes de atualizar o plano ativo
         mongo_db["plan_history"].insert_one({
@@ -203,7 +233,7 @@ def salvar_plano(user_id: str, tipo: str, conteudo: dict):
                 "tipo": tipo,
                 "conteudo": conteudo,
                 "updated_at": datetime.now().isoformat(),
-                "versao_ia": "3.2.0-Stable" # Atualizado para sincronia de versão
+                "versao_ia": "3.3.0-Native" 
             }},
             upsert=True
         )
@@ -214,20 +244,18 @@ def salvar_plano(user_id: str, tipo: str, conteudo: dict):
             {"$set": {f"planos.{tipo}_ativo": True, "updated_at": datetime.now().isoformat()}}
         )
 
-        logger.info(f"✅ [ROBUST] Plano de {tipo} (Foco: {conteudo.get('foco_atual', 'N/A')}) salvo para {clean_user_id}")
+        logger.info(f"✅ Plano de {tipo} salvo para {clean_user_id}")
         return True
     except Exception as e:
         logger.error(f"Erro ao salvar plano robusto {tipo} para {user_id}: {e}")
         return False
 
 def ler_plano(user_id: str, tipo: str):
-    """
-    Recupera o plano robusto mais recente.
-    [AURA UPDATE] Garante o retorno de campos de endurance (distancia/unidade).
-    """
     if mongo_db is None: return {}
     try:
         clean_user_id = str(user_id).strip().replace('"', '').replace("'", "")
+        if not ObjectId.is_valid(clean_user_id): return {}
+
         doc = mongo_db["plans"].find_one({"user_id": clean_user_id, "tipo": tipo})
         if doc:
             return doc.get("conteudo", {})

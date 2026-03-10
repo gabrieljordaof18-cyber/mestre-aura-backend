@@ -18,7 +18,7 @@ logger = logging.getLogger("AURA_DATA_USER")
 def carregar_memoria(user_id: str) -> Dict[str, Any]:
     """
     Carrega o perfil completo do usuário pelo ID do MongoDB.
-    Garante que o retorno seja um dicionário compatível com o Schema 2.1.0 (Robust).
+    Garante que o retorno seja um dicionário compatível com o Schema 3.1.0 (App Store Ready).
     """
     if not user_id:
         logger.warning("⚠️ Tentativa de carregar memória sem user_id.")
@@ -36,7 +36,6 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
             usuario["_id"] = str(usuario["_id"])
             
             # [AURA ROBUST] Inicialização de campos vitais para o novo fluxo de IA Híbrida
-            # Evita que o logic.py quebre ao tentar ler preferências do atleta
             if "xp_total" not in usuario: usuario["xp_total"] = 0
             if "moedas" not in usuario: usuario["moedas"] = usuario["xp_total"]
             if "saldo_cristais" not in usuario: usuario["saldo_cristais"] = 0
@@ -48,6 +47,17 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
             if "idade" not in usuario: usuario["idade"] = 25
             if "tipo_perfil" not in usuario: usuario["tipo_perfil"] = "atleta"
             
+            # [AURA NATIVE READY] Blindagem de campos de Assinatura e Autenticação
+            # Essencial para evitar KeyError no rotas_api.py ao lidar com usuários antigos
+            if "plano" not in usuario: 
+                usuario["plano"] = "free"
+            if "status_assinatura" not in usuario: 
+                usuario["status_assinatura"] = "inativo"
+            if "data_vencimento" not in usuario: 
+                usuario["data_vencimento"] = ""
+            if "provedor_auth" not in usuario: 
+                usuario["provedor_auth"] = "email"
+
             # Garantia de estrutura para o rastreio de Planos IA
             if "planos" not in usuario:
                 usuario["planos"] = {
@@ -113,7 +123,7 @@ def redefinir_metas_usuario(user_id: str) -> bool:
     if not memoria: 
         return False
 
-    # Template limpo baseado no Schema 2.1.0
+    # Template limpo baseado no Schema 3.1.0
     padrao = obter_schema_padrao_usuario(
         email=memoria.get("email", ""), 
         nome=memoria.get("nome", "Atleta")

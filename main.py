@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger("AURA_STARTUP")
 
 # ======================================================
-# 🕛 AGENDADOR DE TAREFAS (SCHEDULER ROBUST 3.0)
+# 🕛 AGENDADOR DE TAREFAS (SCHEDULER ROBUST 3.3.0)
 # ======================================================
 
 def rotina_diaria_manutencao():
@@ -28,7 +28,7 @@ def rotina_diaria_manutencao():
     2. Recalibra fadiga dos usuários para novos treinos robustos.
     3. Atualiza metadados da temporada global.
     """
-    logger.info(f"🕛 [SCHEDULER] Iniciando manutenção neural Aura 3.0: {datetime.now()}")
+    logger.info(f"🕛 [SCHEDULER] Iniciando manutenção neural Aura 3.3.0: {datetime.now()}")
     
     # [AURA FIX] Verificação explícita com None para segurança no MongoDB Atlas
     if mongo_db is None:
@@ -38,15 +38,17 @@ def rotina_diaria_manutencao():
     try:
         # Recupera estado global para auditoria de versão
         estado_global = carregar_memoria_global()
-        logger.info(f"🌍 Aura OS operando na versão: {estado_global.get('versao_ia_ativa', 'Legacy')}")
+        logger.info(f"🌍 Aura OS operando na versão: {estado_global.get('versao_ia_ativa', '3.3.0-Native')}")
 
         # [AURA ROBUST] Iteração sobre usuários ativos para reset de fadiga
         colecao_users = mongo_db["usuarios"]
+        # Buscamos apenas quem já passou pelo onboarding para economizar processamento
         usuarios_ativos = colecao_users.find({"configuracoes_sistema.onboarding_completo": True})
         
         count_reset = 0
         for user in usuarios_ativos:
             user_id = str(user["_id"])
+            # O resetar_homeostase garante que a fadiga comece baixa para o treino do dia
             resetar_homeostase_diaria(user_id)
             count_reset += 1
             

@@ -112,13 +112,13 @@ TOOLS_AURA = [
 ]
 
 # ======================================================
-# 💬 PROCESSAMENTO DE COMANDOS (IA CORE)
+# 💬 PROCESSAMENTO DE COMANDOS (IA CORE 3.3.0)
 # ======================================================
 
 def processar_comando(user_id: str, mensagem: str) -> str:
     """
     Interface principal de chat do Aura.
-    Analisa contexto fisiológico e decide entre falar ou agir (tools).
+    Analisa contexto fisiológico, status de assinatura e decide ações.
     """
     if not user_id: return "⚠️ Erro de identificação do atleta."
 
@@ -127,10 +127,10 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     if not memoria:
         return "⚠️ Não encontrei seu perfil. Certifique-se de estar logado corretamente."
 
-    # Mapeamento de dados do Perfil
+    # Mapeamento de dados do Perfil e Assinatura
     nome_atleta = memoria.get("nome", "Iniciado")
     nivel_atleta = memoria.get("nivel", 1)
-    xp_atleta = memoria.get("xp_total", 0)
+    status_plano = memoria.get("plano", "free").upper()
     objetivo_atleta = memoria.get("objetivo", "Performance Geral")
     esportes_atleta = memoria.get("esportes_favoritos", ["Musculação"])
     
@@ -143,17 +143,16 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     prompt_sistema = {
         "role": "system", 
         "content": (
-            f"Você é o MESTRE DA AURA. Treinador de elite, técnico e analítico.\n"
-            f"Atleta: {nome_atleta} | Nível: {nivel_atleta}\n"
+            f"Você é o MESTRE DA AURA. Inteligência central do Sistema Operacional de Performance Humana.\n"
+            f"Atleta: {nome_atleta} | Nível: {nivel_atleta} | Plano: {status_plano}\n"
             f"Objetivo: {objetivo_atleta} | Esportes Favoritos: {', '.join(esportes_atleta)}\n"
             f"Estado Bio: {estado_bio} (Score: {score_bio})\n\n"
-            f"DIRETRIZES TÉCNICAS:\n"
-            f"1. TREINOS: Devem ser complexos e variados. Cada dia de treino deve ter entre 5 e 10 exercícios.\n"
-            f"2. HIBRIDISMO: Se o atleta pratica Corrida, Ciclismo ou Natação, integre isso na planilha semanal de forma inteligente.\n"
-            f"3. TOOLS: Use as TOOLS para Dietas, Treinos e Mercado. NUNCA liste os exercícios ou preços manualmente se puder usar uma tool.\n"
-            f"4. RESPOSTA PÓS-TOOL: Responda exatamente: 'Treino estruturado! Confira a seção 'Treinos' logo acima.' ou 'Dieta estruturada! Confira a seção 'Dieta' logo acima.'.\n"
-            f"5. LOGÍSTICA: Informe ao usuário que o Mercado Aura entrega em todo o Brasil com cálculo de frete automático via Melhor Envio no checkout.\n"
-            f"6. TOM: Profissional, motivador e focado em dados."
+            f"DIRETRIZES DE ATENDIMENTO:\n"
+            f"1. TOM: Técnico, estoico, motivador e focado em métricas de alto rendimento.\n"
+            f"2. TREINOS NATIVOS: Planilhas semanais devem ser densas (5 a 10 exercícios/dia). Se o plano for 'FREE', incentive o upgrade para o plano PRO para protocolos ilimitados.\n"
+            f"3. LOGÍSTICA INTEGRADA: O Mercado Aura possui entrega em todo o Brasil. Informe que o cálculo de frete (Melhor Envio) é feito em tempo real no checkout.\n"
+            f"4. TOOLS: Sempre use tools para salvar Treinos e Dietas. Após salvar, responda: 'Protocolo atualizado! Verifique a aba correspondente acima.'\n"
+            f"5. PRIVACIDADE: Se questionado, confirme que os dados de biometria são criptografados e seguem a Política de Privacidade nativa do app."
         )
     }
 
@@ -203,27 +202,26 @@ def _executar_ferramentas(user_id: str, tool_calls: list) -> str:
             
             if nome_func == "salvar_nova_dieta":
                 if salvar_plano(user_id, "dieta", args):
-                    respostas.append("Dieta estruturada! Confira a seção 'Dieta' logo acima.")
+                    respostas.append("Protocolo Nutricional atualizado! Verifique a aba correspondente acima.")
             
             elif nome_func == "salvar_novo_treino":
                 if salvar_plano(user_id, "treino", args):
-                    respostas.append("Treino estruturado! Confira a seção 'Treinos' logo acima.")
+                    respostas.append("Protocolo de Treinamento atualizado! Verifique a aba correspondente acima.")
             
             elif nome_func == "consultar_mercado_aura":
-                # [AURA FIX] Alterado nome da coleção para 'ProdutosLoja'
+                # [AURA FIX] Sincronizado com a coleção oficial de produtos do Marketplace
                 termo = args.get("termo_busca")
-                # Busca na coleção correta sincronizada com o Base44
                 produtos = list(mongo_db["ProdutosLoja"].find({"nome": {"$regex": termo, "$options": "i"}}).limit(3))
                 
                 if produtos:
-                    resp_prod = "Encontrei no Mercado Aura:\n"
+                    resp_prod = "📊 Localizei no Mercado Aura:\n"
                     for p in produtos:
-                        # [AURA FIX] Prioriza preco_aura conforme nova lógica financeira
+                        # [AURA FIX] Prioriza preco_aura e menciona a logística nativa
                         preco = p.get("preco_aura") or p.get("preco_original") or 0
-                        resp_prod += f"- {p['nome']}: R$ {preco:.2f} (Logística Melhor Envio disponível no checkout)\n"
+                        resp_prod += f"- {p['nome']}: R$ {preco:.2f} (Cotação de frete Melhor Envio no checkout)\n"
                     respostas.append(resp_prod)
                 else:
-                    respostas.append("Não encontrei esse item específico no Mercado agora, mas verifique as categorias 'Suplementos' ou 'Vestuário'.")
+                    respostas.append("Não localizei esse item exato no estoque agora. Sugiro verificar as categorias de 'Suplementos' no menu principal.")
                     
         except Exception as e:
             logger.error(f"Erro ao executar Tool {tool.function.name}: {e}")

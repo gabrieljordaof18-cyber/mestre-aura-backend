@@ -11,7 +11,7 @@ from data_manager import mongo_db
 logger = logging.getLogger("AURA_GAMIFICACAO")
 
 # ======================================================
-# ⚙️ CONSTANTES DE JOGO (BALANCEAMENTO 3.0)
+# ⚙️ CONSTANTES DE JOGO (BALANCEAMENTO 3.1 - NATIVE READY)
 # ======================================================
 XP_BASE_NIVEL = 1000        # Custo base para subir de nível
 
@@ -33,7 +33,7 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     """
     Gera ou recupera as 3 missões diárias do usuário.
     Sincronizado com a coleção 'missoes' do MongoDB Atlas.
-    Agora inclui desafios para o fluxo de treinos híbridos.
+    [AURA SYNC] Títulos e Ícones ajustados para o novo layout do Perfil.jsx e Home.
     """
     if not user_id: return []
 
@@ -59,13 +59,14 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"❌ Erro ao acessar coleção 'missoes': {e}")
 
-    # Fallback caso a coleção esteja vazia (Inclui missões híbridas)
+    # [AURA SYNC] Fallback com títulos imersivos (Substituindo o genérico 'Desafio Aura')
     if not pool_missoes:
         pool_missoes = [
-            {"id": "m_h2o", "titulo": "Hidratação", "descricao": "Beber 3L de água", "xp": 100, "categoria": "saude", "icone": "Zap"},
-            {"id": "m_hybrid", "titulo": "Foco Híbrido", "descricao": "Musculação + 10min Cardio", "xp": 150, "categoria": "treino", "icone": "Flame"},
-            {"id": "m_mov", "titulo": "Consistência", "descricao": "Bater 10.000 passos", "xp": 100, "categoria": "treino", "icone": "Rocket"},
-            {"id": "m_sono", "titulo": "Repouso Mestre", "descricao": "Dormir antes das 23h", "xp": 120, "categoria": "saude", "icone": "Moon"}
+            {"id": "m_h2o", "titulo": "Caminho da Água", "descricao": "Ingerir 3.5L de água hoje", "xp": 100, "categoria": "saude", "icone": "Zap"},
+            {"id": "m_hybrid", "titulo": "Protocolo Híbrido", "descricao": "Musculação + 15min de Cardio", "xp": 150, "categoria": "treino", "icone": "Flame"},
+            {"id": "m_mov", "titulo": "Nômade Moderno", "descricao": "Bater a meta de 10.000 passos", "xp": 100, "categoria": "treino", "icone": "Activity"},
+            {"id": "m_sono", "titulo": "Mestre do Descanso", "descricao": "Garantir 8h de sono profundo", "xp": 120, "categoria": "descanso", "icone": "Moon"},
+            {"id": "m_foco", "titulo": "Mente Blindada", "descricao": "Completar 10min de Meditação", "xp": 80, "categoria": "mente", "icone": "Brain"}
         ]
 
     try:
@@ -76,9 +77,8 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
 
     missoes_ativas = []
     for m in selecionadas:
-        # [AURA FIX] Prioriza o Título do MongoDB para evitar o texto genérico "Desafio Aura"
-        # Se m["titulo"] não existir, ele tenta a descrição. Caso ambos falhem, usa o fallback final.
-        titulo_final = m.get("titulo") or m.get("descricao") or "Desafio Aura"
+        # [AURA SYNC] Prioridade absoluta para o Título Específico para evitar duplicidade visual no front
+        titulo_final = m.get("titulo") or "Missão Diária"
 
         missoes_ativas.append({
             "id": m.get("id"),
@@ -99,30 +99,29 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     memoria["gamificacao"]["ultima_geracao_missoes"] = datetime.now().isoformat()
     
     salvar_memoria(user_id, memoria)
-    logger.info(f"🎲 [GAMIFICAÇÃO] Ciclo de missões renovado para {user_id}")
+    logger.info(f"🎲 [GAMIFICAÇÃO] Ciclo de missões renovado com novos títulos para {user_id}")
     
     return missoes_ativas
 
 def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     """
     Adiciona XP e gerencia a progressão econômica Aura.
-    LÓGICA UNIFICADA: 
+    LÓGICA UNIFICADA 3.1: 
     - Moedas = XP Ganhos (1:1)
-    - Cristais = XP Ganhos / 10 (Garante inteiro)
-    - Bônus de Level Up incluído com proteção contra loop.
+    - Cristais = XP Ganhos / 10 (Divisão inteira //)
+    - Bônus de Level Up com verificação de Schema.
     """
     if not user_id: return {"erro": "ID ausente"}
 
     memoria = carregar_memoria(user_id)
     if not memoria: return {"erro": "Perfil não carregado"}
 
-    # Captura de saldos na raiz (XP, Moedas, Cristais)
+    # Captura de saldos na raiz (Sincronizado com data_user.py blindado)
     xp_atual = int(memoria.get("xp_total", 0))
     nivel_atual = int(memoria.get("nivel", 1))
     moedas_atuais = int(memoria.get("moedas", 0))
     cristais_atuais = int(memoria.get("saldo_cristais", 0))
 
-    # [AURA FIX] Cristais agora são sempre inteiros utilizando divisão inteira //
     ganho_moedas = int(quantidade)
     ganho_cristais = int(quantidade // 10)
 
@@ -133,8 +132,7 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     subiu_nivel = False
     bonus_level_up_cristais = 0
     
-    # [AURA FIX] Lógica de Progressão com proteção contra looping infinito
-    # Limitamos a subida a no máximo 10 níveis por vez para evitar travamentos de processamento
+    # [AURA FIX] Lógica de Progressão Estável
     seguranca_loop = 0
     while xp_atual >= (XP_BASE_NIVEL * nivel_atual) and seguranca_loop < 10:
         xp_atual -= (XP_BASE_NIVEL * nivel_atual)
@@ -142,22 +140,23 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
         bonus_level_up_cristais += CRISTAIS_POR_LEVEL_UP
         subiu_nivel = True
         seguranca_loop += 1
-        logger.info(f"🆙 [LEVEL UP] {user_id} atingiu o Nível {nivel_atual}")
+        logger.info(f"🆙 [LEVEL UP] {user_id} subiu para Nível {nivel_atual}")
 
     # Atualiza o saldo final com bônus de nível
     cristais_atuais += bonus_level_up_cristais
 
-    # Persistência na RAIZ do documento do Atlas para sincronia com Base44
+    # Persistência garantida na raiz do documento
     memoria["xp_total"] = xp_atual
     memoria["nivel"] = nivel_atual
     memoria["moedas"] = moedas_atuais
     memoria["saldo_cristais"] = cristais_atuais
     
-    # Atualiza estatísticas de performance para o perfil
+    # Estatísticas de engajamento para Rewards futuros
     if "gamificacao" in memoria:
         if "estatisticas" not in memoria["gamificacao"]:
             memoria["gamificacao"]["estatisticas"] = {"missoes_completadas": 0, "total_atividades": 0, "dias_seguidos": 0}
         memoria["gamificacao"]["estatisticas"]["total_atividades"] += 1
+        memoria["gamificacao"]["estatisticas"]["missoes_completadas"] += 1
 
     salvar_memoria(user_id, memoria)
     
@@ -169,28 +168,24 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
         "subiu": subiu_nivel
     }
 
-# ======================================================
-# 📐 PROCESSAMENTO DE SENSORES
-# ======================================================
-
 def calcular_xp_fisiologico(dados_fisiologicos: Dict[str, Any]) -> int:
-    """Traduz dados de biometria em economia ativa."""
+    """Traduz dados de biometria e sensores em economia ativa para o app nativo."""
     xp_ganho = 0
     
-    # Extração robusta dos campos unificados do Atlas
+    # Extração de campos via Schema 3.1
     sono = float(dados_fisiologicos.get("sono_horas", 0))
     passos = int(dados_fisiologicos.get("passos_hoje", 0))
     fadiga = int(dados_fisiologicos.get("fadiga", 0))
 
-    # Recompensa por Sono de Qualidade
+    # [AURA BALANCE] Recompensa por sono otimizado
     if sono >= 7.5: xp_ganho += XP_SONO_OTIMO
     elif sono >= 6.5: xp_ganho += XP_SONO_BOM
 
-    # Recompensa por Movimentação Diária
+    # [AURA BALANCE] Recompensa por passos (Metas Apple Health Ready)
     if passos >= 12000: xp_ganho += 70
     elif passos >= 8000: xp_ganho += 40
     
-    # Bônus por consistência em dias de fadiga controlada
+    # Bônus de resiliência (atividade física com fadiga baixa)
     if fadiga < 30 and passos > 5000:
         xp_ganho += 20
 

@@ -3,7 +3,7 @@ import os
 import requests
 import jwt
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any
 from flask import request, jsonify, Blueprint
 from bson.objectid import ObjectId # [AURA FIX] Importação necessária para busca por _id
@@ -56,7 +56,7 @@ def token_required(f):
     return decorated
 
 # ===================================================
-# 👤 STATUS E PROGRESSÃO (MULTIJOGADOR)
+# 👤 STATUS E PROGRESSÃO (MULTIJOGADOR + IAP READY)
 # ===================================================
 
 @api_bp.route('/usuario/status', methods=['GET'])
@@ -72,6 +72,11 @@ def get_status_jogador(current_user_id):
         nivel_atual = int(dados.get("nivel", 1))
         nome_atleta = dados.get("nome", "Atleta Aura")
         cristais = int(dados.get("saldo_cristais", 0))
+        
+        # [AURA NEW] Novos campos exigidos pela App Store / RevenueCat
+        plano = dados.get("plano", "free")
+        status_assinatura = dados.get("status_assinatura", "inativo")
+        vencimento = dados.get("data_vencimento", "")
         
         # Lógica de Barra de Progresso
         XP_BASE = 1000
@@ -91,7 +96,11 @@ def get_status_jogador(current_user_id):
             "nivel": nivel_atual,
             "barra_progresso": max(0, min(100, progresso)),
             "xp_falta": max(0, range_nivel - xp_no_nivel),
-            "objetivo": dados.get("objetivo", "Performance")
+            "objetivo": dados.get("objetivo", "Performance"),
+            # Campos de assinatura integrados
+            "plano": plano,
+            "status_assinatura": status_assinatura,
+            "vencimento": vencimento
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
@@ -130,17 +139,28 @@ def get_plano_dieta(current_user_id):
 @api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
 @token_required
 def atualizar_biometria(current_user_id):
-    """Atualiza dados físicos para que a IA gere treinos com volume correto."""
+    """Atualiza dados físicos e origem da conta (Apple/Google) para App Store compliance."""
     try:
         dados = request.get_json(force=True)
-        sucesso = salvar_memoria(current_user_id, {
+        
+        # [AURA FIX] Payload estendido para incluir metadados de autenticação
+        update_payload = {
             "peso_kg": float(dados.get("peso", 70)),
             "altura_cm": float(dados.get("altura", 170)),
             "idade": int(dados.get("idade", 25)),
             "objetivo": dados.get("objetivo", "Performance")
-        })
+        }
+        
+        # Se vierem dados de provedor_auth (Apple/Google) do Onboarding.jsx
+        if dados.get("provedor_auth"):
+            update_payload["provedor_auth"] = dados.get("provedor_auth")
+        if dados.get("email"):
+            update_payload["email"] = dados.get("email")
+
+        sucesso = salvar_memoria(current_user_id, update_payload)
         return jsonify({"sucesso": sucesso})
     except Exception as e:
+        logger.error(f"Erro ao atualizar biometria/auth para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
 
 # ===================================================
@@ -230,15 +250,64 @@ def feedback(current_user_id):
     return jsonify({"texto": gerar_feedback_emocional(current_user_id)})
 
 # ===================================================
-# 💳 PAGAMENTOS E LOGÍSTICA
+# 💳 PAGAMENTOS E WEBHOOKS (ASAAS + REVENUECAT)
 # ===================================================
+
+@api_bp.route('/webhook/revenuecat', methods=['POST'])
+def webhook_revenuecat():
+    """
+    Webhook oficial para o RevenueCat. 
+    Lida com o ciclo de vida das assinaturas Apple/Google.
+    """
+    try:
+        dados = request.get_json(force=True)
+        evento = dados.get("event", {})
+        tipo = evento.get("type")
+        app_user_id = evento.get("app_user_id") # Este é o aura_user_id do Base44
+
+        if not app_user_id:
+            return jsonify({"status": "ignorado", "motivo": "sem app_user_id"}), 200
+
+        # Mapeamento de planos baseado no Product ID do RevenueCat
+        product_id = evento.get("product_id", "").lower()
+        novo_plano = "pro" if "pro" in product_id else "plus"
+
+        # 1. Compra ou Renovação com sucesso
+        if tipo in ["INITIAL_PURCHASE", "RENEWAL", "SUBSCRIBER_ALIAS"]:
+            vencimento = (datetime.now() + timedelta(days=32)).isoformat()
+            mongo_db["usuarios"].update_one(
+                {"_id": ObjectId(app_user_id)},
+                {"$set": {
+                    "plano": novo_plano,
+                    "status_assinatura": "ativo",
+                    "data_vencimento": vencimento,
+                    "updated_at": datetime.now().isoformat()
+                }}
+            )
+            logger.info(f"💰 Assinatura {novo_plano} ATIVADA para o usuário {app_user_id}")
+
+        # 2. Cancelamento ou Expiração
+        elif tipo in ["CANCELLATION", "EXPIRATION"]:
+            mongo_db["usuarios"].update_one(
+                {"_id": ObjectId(app_user_id)},
+                {"$set": {
+                    "plano": "free",
+                    "status_assinatura": "expirado",
+                    "updated_at": datetime.now().isoformat()
+                }}
+            )
+            logger.info(f"🚫 Assinatura FINALIZADA para o usuário {app_user_id}")
+
+        return jsonify({"status": "recebido"}), 200
+    except Exception as e:
+        logger.error(f"Erro no Webhook RevenueCat: {e}")
+        return jsonify({"erro": "Erro interno no processamento do webhook"}), 500
 
 @api_bp.route('/pagamento/criar', methods=['POST'])
 @token_required
 def criar_pagamento(current_user_id):
     dados = request.get_json(force=True)
     dados['user_id'] = current_user_id
-    # A lógica de criar_cobranca agora deve ser capaz de lidar com frete se enviado no payload
     return jsonify(criar_cobranca(dados))
 
 # [AURA FIX 404] Rota mapeada via app.py
@@ -269,7 +338,6 @@ def rota_cotar_frete(current_user_id):
                     prod_doc = mongo_db["ProdutosLoja"].find_one({"_id": ObjectId(prod_id)})
                 
                 # [AURA ROBUST FALLBACK] Prioriza dados do Banco, mas usa o Payload como segurança
-                # Isso resolve o problema de atraso/falha quando o Atlas demora a responder.
                 item_traduzido = {
                     "id": prod_id,
                     "quantidade": int(item.get("quantidade") or 1),

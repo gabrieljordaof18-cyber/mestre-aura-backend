@@ -19,6 +19,11 @@ requests==2.32.5
 PyJWT==2.10.1
 pytz==2024.1
 
+# --- SEGURANÇA E AUTH (APPLE & REVENUECAT READY) ---
+# [AURA NEW] Necessário para validar assinaturas RS256 do Sign in with Apple
+cryptography==42.0.5
+python-jose[cryptography]==3.3.0
+
 # --- TIPAGEM E SEGURANÇA ---
 pydantic==2.12.4
 email-validator

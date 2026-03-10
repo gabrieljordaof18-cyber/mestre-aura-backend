@@ -2,13 +2,13 @@ from datetime import datetime
 from typing import Dict, Any
 
 # ==============================================================
-# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 3.0 - HYBRID ROBUST)
+# 📘 DICIONÁRIO OFICIAL DE DADOS (SCHEMA 3.3.0 - NATIVE READY)
 # ==============================================================
 
 def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[str, Any]:
     """
     Retorna a estrutura base de um novo usuário para o MongoDB.
-    [AURA ROBUST] Sincronizado para Treinos Híbridos e Nova Economia:
+    [AURA NATIVE] Atualizado para suporte a In-App Purchases e Apple Auth.
     - Aura Coins (moedas) = XP (1:1)
     - Cristais (saldo_cristais) = XP / 10
     """
@@ -17,23 +17,27 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
     return {
         # --- 1. IDENTIFICAÇÃO E PERFIL ---
         "nome": nome,
-        "email": email,
-        "idade": 25,                    # Vital para cálculos metabólicos da IA
-        "tipo_perfil": "atleta",        # atleta ou professor
-        "esportes_favoritos": ["Musculação"], # Define a prioridade do treino híbrido
-        "auth_provider": "email", 
+        "email": email.strip().lower() if email else "",
+        "idade": 25,                    
+        "tipo_perfil": "atleta",        
+        "esportes_favoritos": ["Musculação"], 
+        "auth_provider": "email",       # email, apple, google ou strava
         "created_at": agora_iso,
         "updated_at": agora_iso,
         "foto_perfil": "", 
-        "plano": "free",
+        
+        # --- [AURA NEW] ASSINATURA NATIVA ---
+        "plano": "free",                # free, plus, pro
+        "status_assinatura": "inativo", # ativo, inativo, expirado
+        "data_vencimento": "",          # Data ISO da expiração IAP
         "objetivo": "Performance Máxima", 
-        "cla_atual_id": None,           # Âncora para sistema social
+        "cla_atual_id": None,           
         
         # --- 2. PROGRESSÃO E ECONOMIA ---
         "nivel": 1,
         "xp_total": 0,         
-        "moedas": 0,           # Sincronizado 1:1 com XP
-        "saldo_cristais": 0,   # Sincronizado 10:1 com XP
+        "moedas": 0,           
+        "saldo_cristais": 0,   
         "titulo_atual": "Iniciado",
         
         # --- 3. STATUS ATUAL (BIO-SINALIZAÇÃO) ---
@@ -46,7 +50,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             "fc_repouso": 0,
             "hrv_valor": 0,
             "sono_horas": 0.0,
-            "historico_recente_esportes": [] # Contexto para o Mestre Aura
+            "historico_recente_esportes": [] 
         },
 
         # --- 4. HOMEOSTASE (INTELIGÊNCIA DE CARGA) ---
@@ -57,7 +61,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             "ultima_analise": agora_iso
         },
 
-        # --- 5. PLANOS IA (NOVO) ---
+        # --- 5. PLANOS IA (Sincronizado com Mestre Aura) ---
         "planos": {
             "treino_ativo": False,
             "dieta_ativa": False,
@@ -75,7 +79,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
             }
         },
 
-        # --- 7. INVENTÁRIO (Sincronizado com Mercado) ---
+        # --- 7. INVENTÁRIO ---
         "inventario": {
             "vouchers": [],
             "itens_consumiveis": [],
@@ -89,31 +93,35 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
                 "atleta_id": None,
                 "tokens": {} 
             },
-            "apple_health": {"conectado": False}
+            "apple_health": {
+                "conectado": False,
+                "updated_at": agora_iso
+            }
         },
         
         # --- 9. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
-            "versao_schema": "3.0.0-Hybrid" # Era dos planos robustos
+            "versao_schema": "3.3.0-Native", # Atualizado para nova arquitetura Apple
+            "notificacoes_push": True
         }
     }
 
 def obter_schema_padrao_global() -> Dict[str, Any]:
-    """Estrutura da Memória Global (Analytics de Alta Performance)."""
+    """Estrutura da Memória Global (Analytics v3.3.0)."""
     return {
         "_id": "global_state", 
-        "versao_ia_ativa": "3.0.0-Hybrid",
+        "versao_ia_ativa": "3.3.0-Native",
         "temporada_atual": 1,
         "sistema": {
-            "versao_api": "3.0.0",
-            "status": "ativa_robust",
+            "versao_api": "3.3.0",
+            "status": "online",
             "manutencao": False
         },
         "analytics": {
             "total_usuarios": 0,
-            "total_planos_gerados": 0, # Novo
-            "total_treinos_realizados": 0, # Novo
+            "total_planos_gerados": 0, 
+            "total_treinos_realizados": 0, 
             "mensagens_trocadas": 0
         },
         "ranking_global_cache": {
@@ -125,44 +133,44 @@ def obter_schema_padrao_global() -> Dict[str, Any]:
 
 def obter_schema_padrao_produto() -> Dict[str, Any]:
     """
-    Define a estrutura de um item na loja do Aura.
-    [AURA LOGISTICS] Adicionado suporte para dimensões e peso exigidos pelo Melhor Envio.
+    Estrutura de item no Marketplace.
+    [AURA LOGISTICS] Sincronizado com Melhor Envio.
     """
     return {
         "id": "",
         "nome": "",
         "marca": "",
-        "preco_final": 0.0,
+        "preco_aura": 0.0,        # Preço oficial de venda
+        "preco_original": 0.0,    # Para exibir descontos
         "custo_moedas": 0, 
         "nivel_minimo": 1,
         "imagem_url": "",
-        "categoria": "destaque",
+        "categoria": "Suplementos",
         "estoque": True,
         # --- CAMPOS DE LOGÍSTICA ---
-        "peso_kg": 0.5,           # Peso padrão para cálculos (mínimo sugerido 0.3)
-        "largura_cm": 15,         # Dimensões para cubagem
+        "peso_kg": 0.5,           
+        "largura_cm": 15,         
         "altura_cm": 10,
         "comprimento_cm": 20,
-        "cep_origem": "74000000"  # CEP de Goiânia por padrão
+        "cep_origem": "74000000"  
     }
 
 def obter_schema_padrao_pedido() -> Dict[str, Any]:
     """
-    Define a estrutura de um pedido registrado no MongoDB.
-    [AURA LOGISTICS] Inclui campos para rastreio e separação de frete.
+    Estrutura de pedido para Marketplace Físico.
     """
     agora_iso = datetime.now().isoformat()
     return {
         "user_id": "",
-        "asaas_id": "",           # ID da cobrança no Asaas
-        "customer_id": "",        # ID do cliente no Asaas
-        "status": "PENDING",      # PENDING, RECEIVED, OVERDUE
+        "asaas_id": "",           
+        "customer_id": "",        
+        "status": "PENDING",      
         "valor_produtos": 0.0,
-        "valor_frete": 0.0,       # Separado para transparência na planilha
-        "valor_total": 0.0,       # produtos + frete
+        "valor_frete": 0.0,       
+        "valor_total": 0.0,       
         "metodo": "pix",
-        "transportadora": "",     # Ex: Jadlog, Correios
-        "servico_logistico": "",  # Ex: .Package, .SEDEX
+        "transportadora": "",     
+        "servico_logistico": "",  
         "codigo_rastreio": "",
         "endereco_entrega": {
             "cep": "",
@@ -172,8 +180,8 @@ def obter_schema_padrao_pedido() -> Dict[str, Any]:
             "cidade": "",
             "estado": ""
         },
-        "itens": [],              # Lista de IDs e quantidades
+        "itens": [],              
         "created_at": agora_iso,
         "updated_at": agora_iso,
-        "versao_os": "3.0.0-Hybrid"
+        "versao_os": "3.3.0-Native"
     }
