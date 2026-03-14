@@ -1,39 +1,57 @@
 import os
 import logging
-from flask import Flask, jsonify, request  # [AURA FIX] Importação do 'request' unificada
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-# Importação dos Blueprints (Módulos de Rotas)
-# Certifique-se que os arquivos rotas_api.py e rotas_strava.py existam na mesma pasta
 from rotas_api import api_bp
-from rotas_strava import strava_bp 
+from rotas_strava import strava_bp
 
-# Configuração de Logs (Nuvem/Render)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("AURA_APP")
 
-# [AURA STABLE SOLUTION] Instanciamos o app diretamente no escopo global.
-# Isso garante que o Gunicorn (Render) carregue as rotas instantaneamente ao importar o arquivo.
 app = Flask(__name__)
 
-# 1. Segurança e CORS (Otimizado para Assinaturas Nativas e Webhooks)
-# [AURA FIX] Ajustado para garantir que o RevenueCat (Webhooks) e o Base44 consigam enviar dados.
-# Liberamos 'X-Apple-IAP-Id' e outros headers comuns em transações de aplicativos.
-CORS(app, resources={r"/*": {
-    "origins": "*",
-    "allow_headers": [
-        "Authorization", 
-        "Content-Type", 
-        "X-Requested-With", 
-        "X-Apple-IAP-Id", 
-        "X-RevenueCat-ETag"
-    ],
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "expose_headers": ["Content-Range", "X-Content-Range"]
-}})
+# ===================================================
+# 🔐 CORS — URL do Render como origem principal
+# ===================================================
+# FRONTEND_URL deve ser configurada no painel do Render.
+# Ex: https://meu-app.onrender.com
+# Webhooks externos (Asaas, RevenueCat) precisam de origins="*" pois
+# partem de servidores de terceiros — não de um browser.
+
+_FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+_ALLOWED_ORIGINS = (
+    [_FRONTEND_URL, "http://localhost:3000", "http://localhost:5050", "capacitor://localhost"]
+    if _FRONTEND_URL
+    else "*"
+)
+
+_CORS_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "X-Requested-With",
+    "X-Apple-IAP-Id",
+    "X-RevenueCat-ETag"
+]
+
+CORS(app, resources={
+    # Rotas de webhook abertas para servidores externos (Asaas / RevenueCat)
+    r"/api/webhook/*": {
+        "origins": "*",
+        "allow_headers": _CORS_HEADERS,
+        "methods": ["POST", "OPTIONS"]
+    },
+    # Todas as demais rotas — restritas à URL do Render (ou * em desenvolvimento)
+    r"/*": {
+        "origins": _ALLOWED_ORIGINS,
+        "allow_headers": _CORS_HEADERS,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "expose_headers": ["Content-Range", "X-Content-Range"]
+    }
+})
 
 # 2. Registro de Rotas (Blueprints)
 # [AURA FIX 404] Definimos o prefixo global aqui de forma definitiva. 
