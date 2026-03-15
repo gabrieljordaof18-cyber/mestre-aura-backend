@@ -94,9 +94,8 @@ def salvar_memoria(user_id: str, dados: Dict[str, Any]) -> bool:
         if "_id" in dados_para_salvar:
             del dados_para_salvar["_id"]
 
-        # [AURA ROBUST] Garantia de sincronização 1:1 entre XP e Moedas
-        if "xp_total" in dados_para_salvar:
-            dados_para_salvar["moedas"] = dados_para_salvar["xp_total"]
+        # XP é histórico fixo (nunca decresce). Moedas é saldo gastável independente.
+        # A sincronização 1:1 foi removida — use gastar_moedas() para descontar Moedas.
 
         # Adiciona carimbo de tempo da última modificação
         dados_para_salvar["updated_at"] = datetime.now().isoformat()
@@ -163,3 +162,42 @@ def atualizar_preferencia_esportiva(user_id: str, esportes: list) -> bool:
     """
     if not isinstance(esportes, list): return False
     return salvar_memoria(user_id, {"esportes_favoritos": esportes})
+
+
+# ==============================================================
+# 💰 ECONOMIA NATIVA — XP vs MOEDAS
+# ==============================================================
+# XP  → Histórico cumulativo de progressão. Nunca diminui.
+#         Gerenciado exclusivamente por logic_gamificacao.aplicar_xp().
+# Moedas → Saldo gastável. Inicia igual ao XP mas pode ser debitado
+#           quando o usuário compra itens no Marketplace.
+
+def gastar_moedas(user_id: str, quantidade: int) -> dict:
+    """
+    Debita Moedas do saldo do usuário.
+    Retorna {'sucesso': True, 'saldo_novo': N} ou {'sucesso': False, 'erro': '...'}.
+    XP não é afetado — apenas o saldo de Moedas é reduzido.
+    """
+    if quantidade <= 0:
+        return {"sucesso": False, "erro": "Quantidade deve ser positiva"}
+
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return {"sucesso": False, "erro": "Usuário não encontrado"}
+
+    saldo_atual = int(memoria.get("moedas", 0))
+
+    if saldo_atual < quantidade:
+        return {
+            "sucesso": False,
+            "erro": f"Saldo insuficiente. Você tem {saldo_atual} Moedas."
+        }
+
+    novo_saldo = saldo_atual - quantidade
+    sucesso = salvar_memoria(user_id, {"moedas": novo_saldo})
+
+    if sucesso:
+        logger.info(f"💸 {quantidade} Moedas debitadas de {user_id}. Saldo novo: {novo_saldo}")
+        return {"sucesso": True, "saldo_novo": novo_saldo}
+    else:
+        return {"sucesso": False, "erro": "Falha ao salvar débito de Moedas"}

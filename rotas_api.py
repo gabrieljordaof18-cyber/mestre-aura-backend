@@ -6,11 +6,15 @@ from functools import wraps
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from flask import request, jsonify, Blueprint
-from bson.objectid import ObjectId # [AURA FIX] Importação necessária para busca por _id
+from bson.objectid import ObjectId
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- IMPORTAÇÕES DA NOVA ARQUITETURA ---
-from data_user import carregar_memoria, salvar_memoria
-from data_manager import obter_ranking_global, ler_plano, mongo_db
+from data_user import carregar_memoria, salvar_memoria, gastar_moedas
+from data_manager import (
+    obter_ranking_global, ler_plano, mongo_db,
+    buscar_usuario_por_email, criar_novo_usuario, atualizar_usuario
+)
 from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
@@ -27,7 +31,24 @@ logger = logging.getLogger("AURA_API_ROTAS")
 api_bp = Blueprint('api_bp', __name__)
 
 # ===================================================
-# 🔐 MIDDLEWARE DE AUTENTICAÇÃO (SEGURANÇA 2.0)
+# 🔐 JWT — CONFIGURAÇÃO E HELPERS
+# ===================================================
+
+JWT_SECRET    = os.getenv("JWT_SECRET", "aura-mude-esta-chave-em-producao")
+JWT_ALGORITHM = "HS256"
+JWT_EXP_DAYS  = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_DAYS", 7))
+
+def gerar_token_jwt(user_id: str) -> str:
+    """Gera um token JWT assinado. Validade lida de JWT_ACCESS_TOKEN_EXPIRES_DAYS no .env."""
+    payload = {
+        "user_id": str(user_id),
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + timedelta(days=JWT_EXP_DAYS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+# ===================================================
+# 🔐 MIDDLEWARE DE AUTENTICAÇÃO (JWT NATIVO)
 # ===================================================
 
 def token_required(f):
@@ -37,23 +58,119 @@ def token_required(f):
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
-                # O Base44 costuma enviar "Bearer ID_DO_USUARIO"
                 token = auth_header.split(" ")[1]
             except IndexError:
                 return jsonify({"erro": "Token mal formatado"}), 401
-        
+
         if not token:
             return jsonify({"erro": "Token ausente"}), 401
 
         try:
-            # [AURA FIX] Limpeza rigorosa para garantir que o ID chegue limpo ao MongoDB
+            # Tenta decodificar como JWT nativo
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            current_user_id = payload.get("user_id")
+            if not current_user_id:
+                return jsonify({"erro": "Token inválido: user_id ausente"}), 401
+        except jwt.ExpiredSignatureError:
+            return jsonify({"erro": "Sessão expirada. Faça login novamente."}), 401
+        except jwt.InvalidTokenError:
+            # Compatibilidade retroativa: aceita ID direto durante migração do Base44
+            logger.warning("Token não-JWT recebido — usando como ID direto (modo migração).")
             current_user_id = str(token).strip().replace('"', '').replace("'", "")
-        except Exception as e:
-            logger.error(f"Erro de auth: {e}")
-            return jsonify({"erro": "Sessão inválida"}), 401
 
         return f(current_user_id, *args, **kwargs)
     return decorated
+
+# ===================================================
+# 🔐 AUTENTICAÇÃO NATIVA — REGISTER / LOGIN
+# ===================================================
+
+@api_bp.route('/auth/register', methods=['POST', 'OPTIONS'])
+def registrar_usuario():
+    """
+    Cadastra novo usuário com email/senha e retorna JWT.
+    [AURA FIX] Aceita OPTIONS explicitamente para evitar 404 no handshake do iOS.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
+    try:
+        dados = request.get_json(force=True)
+        email = dados.get('email', '').strip().lower()
+        senha = dados.get('senha', '')
+        nome  = dados.get('nome', 'Atleta Aura').strip()
+
+        if not email or not senha:
+            return jsonify({"erro": "Email e senha são obrigatórios"}), 400
+
+        if len(senha) < 6:
+            return jsonify({"erro": "Senha deve ter ao menos 6 caracteres"}), 400
+
+        if buscar_usuario_por_email(email):
+            return jsonify({"erro": "Este e-mail já está cadastrado"}), 409
+
+        novo_user = criar_novo_usuario(email=email, nome=nome, auth_provider="email")
+        if not novo_user:
+            return jsonify({"erro": "Falha ao criar usuário. Tente novamente."}), 500
+
+        atualizar_usuario(novo_user["_id"], {"senha_hash": generate_password_hash(senha)})
+
+        token = gerar_token_jwt(novo_user["_id"])
+        logger.info(f"🆕 Novo usuário registrado nativamente: {email}")
+
+        return jsonify({
+            "sucesso": True,
+            "token": token,
+            "user_id": str(novo_user["_id"]),
+            "nome": nome,
+            "email": email
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Erro no registro: {e}")
+        return jsonify({"erro": "Falha interna no cadastro"}), 500
+
+
+@api_bp.route('/auth/login', methods=['POST', 'OPTIONS'])
+def login_usuario():
+    """
+    Autentica usuário com email/senha e retorna JWT.
+    [AURA FIX] Aceita OPTIONS explicitamente para evitar 404 no handshake do iOS.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
+    try:
+        dados = request.get_json(force=True)
+        email = dados.get('email', '').strip().lower()
+        senha = dados.get('senha', '')
+
+        if not email or not senha:
+            return jsonify({"erro": "Email e senha são obrigatórios"}), 400
+
+        usuario = buscar_usuario_por_email(email)
+        if not usuario:
+            return jsonify({"erro": "Credenciais inválidas"}), 401
+
+        senha_hash = usuario.get('senha_hash', '')
+        if not senha_hash or not check_password_hash(senha_hash, senha):
+            return jsonify({"erro": "Credenciais inválidas"}), 401
+
+        token = gerar_token_jwt(str(usuario["_id"]))
+        logger.info(f"✅ Login bem-sucedido: {email}")
+
+        return jsonify({
+            "sucesso": True,
+            "token": token,
+            "user_id": str(usuario["_id"]),
+            "nome": usuario.get("nome", "Atleta"),
+            "email": email,
+            "plano": usuario.get("plano", "free")
+        })
+
+    except Exception as e:
+        logger.error(f"Erro no login: {e}")
+        return jsonify({"erro": "Falha interna no login"}), 500
 
 # ===================================================
 # 👤 STATUS E PROGRESSÃO (MULTIJOGADOR + IAP READY)
@@ -88,19 +205,24 @@ def get_status_jogador(current_user_id):
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
         return jsonify({
-            "id": current_user_id,
-            "nome": nome_atleta,
-            "foto": dados.get("foto_perfil", ""),
-            "xp_total": xp_total,
-            "saldo_cristais": cristais,
-            "nivel": nivel_atual,
-            "barra_progresso": max(0, min(100, progresso)),
-            "xp_falta": max(0, range_nivel - xp_no_nivel),
-            "objetivo": dados.get("objetivo", "Performance"),
-            # Campos de assinatura integrados
-            "plano": plano,
-            "status_assinatura": status_assinatura,
-            "vencimento": vencimento
+            # Identidade — ambos os nomes para compatibilidade total frontend/backend
+            "id":       current_user_id,
+            "user_id":  current_user_id,
+            "email":    dados.get("email", ""),
+            "nome":     nome_atleta,
+            "foto":     dados.get("foto_perfil", ""),
+            # Progressão
+            "xp_total":         xp_total,
+            "moedas":           int(dados.get("moedas", xp_total)),  # saldo gastável
+            "saldo_cristais":   cristais,
+            "nivel":            nivel_atual,
+            "barra_progresso":  max(0, min(100, progresso)),
+            "xp_falta":         max(0, range_nivel - xp_no_nivel),
+            "objetivo":         dados.get("objetivo", "Performance"),
+            # Assinatura
+            "plano":              plano,
+            "status_assinatura":  status_assinatura,
+            "vencimento":         vencimento
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
@@ -135,6 +257,22 @@ def get_plano_dieta(current_user_id):
     except Exception as e:
         logger.error(f"Erro ao ler dieta: {e}")
         return jsonify({"erro": "Erro ao carregar dieta"}), 500
+
+@api_bp.route('/usuario/gastar_moedas', methods=['POST'])
+@token_required
+def endpoint_gastar_moedas(current_user_id):
+    """Debita Moedas do saldo gastável sem afetar o XP histórico."""
+    try:
+        dados = request.get_json(force=True)
+        quantidade = int(dados.get("quantidade", 0))
+        resultado = gastar_moedas(current_user_id, quantidade)
+        if resultado["sucesso"]:
+            return jsonify(resultado)
+        return jsonify(resultado), 400
+    except Exception as e:
+        logger.error(f"Erro ao gastar moedas para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 
 @api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
 @token_required
@@ -310,6 +448,131 @@ def criar_pagamento(current_user_id):
     dados['user_id'] = current_user_id
     return jsonify(criar_cobranca(dados))
 
+# ===================================================
+# 💳 PIX QR CODE — CONSULTA POR PAGAMENTO ASAAS
+# ===================================================
+
+@api_bp.route('/pagamento/pix/qrcode/<asaas_id>', methods=['GET'])
+@token_required
+def buscar_qrcode_pix(current_user_id, asaas_id):
+    """Busca o QR Code PIX de um pagamento Asaas pelo seu ID."""
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "access_token": os.getenv("ASAAS_ACCESS_TOKEN", "")
+        }
+        resp = requests.get(
+            f"https://www.asaas.com/api/v3/payments/{asaas_id}/pixQrCode",
+            headers=headers,
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return jsonify(resp.json()), 200
+        logger.warning(f"Asaas QR Code não disponível para {asaas_id}: {resp.status_code}")
+        return jsonify({"erro": "QR Code não disponível para este pagamento."}), 404
+    except Exception as e:
+        logger.error(f"Erro ao buscar QR Code Asaas: {e}")
+        return jsonify({"erro": "Falha ao comunicar com o gateway."}), 500
+
+# ===================================================
+# 🏃 ATIVIDADES DO USUÁRIO
+# ===================================================
+
+@api_bp.route('/atividades', methods=['GET'])
+@token_required
+def listar_atividades(current_user_id):
+    """Retorna o histórico de atividades registradas pelo usuário."""
+    try:
+        if mongo_db is None:
+            return jsonify({"atividades": []}), 200
+        cursor = mongo_db["atividades"].find(
+            {"user_id": current_user_id},
+            {"_id": 0}
+        ).sort("data_atividade", -1).limit(100)
+        return jsonify({"atividades": list(cursor)}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar atividades de {current_user_id}: {e}")
+        return jsonify({"atividades": []}), 200
+
+@api_bp.route('/registrar_atividade', methods=['POST'])
+@token_required
+def registrar_atividade(current_user_id):
+    """Registra uma nova atividade e concede XP ao usuário."""
+    try:
+        dados = request.get_json(force=True)
+        xp_atividade = int(dados.get("xp", 0))
+
+        doc_atividade = {
+            "user_id":         current_user_id,
+            "titulo":          dados.get("titulo", "Atividade"),
+            "tipo":            dados.get("tipo", "Treino"),
+            "duracao":         dados.get("duracao", ""),
+            "valor":           dados.get("valor", 0),
+            "unidade":         dados.get("unidade", ""),
+            "evidencia_url":   dados.get("evidencia_url", ""),
+            "xp_concedido":    xp_atividade,
+            "coins_ganhos":    xp_atividade,
+            "cristais_ganhos": xp_atividade // 10,
+            "data_atividade":  dados.get("data_atividade", datetime.now().isoformat()),
+            "created_at":      datetime.now().isoformat()
+        }
+
+        if mongo_db is not None:
+            mongo_db["atividades"].insert_one(doc_atividade)
+
+        resultado_xp = {}
+        if xp_atividade > 0:
+            resultado_xp = aplicar_xp(current_user_id, xp_atividade)
+
+        return jsonify({"sucesso": True, "dados_xp": resultado_xp}), 201
+    except Exception as e:
+        logger.error(f"Erro ao registrar atividade para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+# ===================================================
+# 🛍️ MARKETPLACE — PRODUTOS E PEDIDOS
+# ===================================================
+
+@api_bp.route('/produtos/listar', methods=['GET'])
+def listar_produtos():
+    """Lista todos os produtos disponíveis na loja física (público)."""
+    try:
+        if mongo_db is None:
+            return jsonify([]), 200
+        campos = {
+            "_id": 1, "nome": 1, "marca": 1, "preco_aura": 1, "preco_original": 1,
+            "custo_moedas": 1, "nivel_minimo": 1, "imagem_url": 1, "categoria": 1,
+            "estoque": 1, "peso_kg": 1, "largura_cm": 1, "altura_cm": 1,
+            "comprimento_cm": 1
+        }
+        docs = list(mongo_db["ProdutosLoja"].find({"estoque": True}, campos))
+        for d in docs:
+            d["id"] = str(d.pop("_id"))
+        return jsonify(docs), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar produtos: {e}")
+        return jsonify([]), 200
+
+@api_bp.route('/pedidos', methods=['GET'])
+@token_required
+def listar_pedidos(current_user_id):
+    """Retorna o histórico de pedidos do usuário logado."""
+    try:
+        if mongo_db is None:
+            return jsonify({"pedidos": []}), 200
+        cursor = mongo_db["pedidos"].find(
+            {"user_id": current_user_id},
+            {"_id": 0}
+        ).sort("created_at", -1).limit(50)
+        return jsonify({"pedidos": list(cursor)}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar pedidos de {current_user_id}: {e}")
+        return jsonify({"pedidos": []}), 200
+
+# ===================================================
+# 🚚 FRETE — COTAÇÃO MELHOR ENVIO
+# ===================================================
+
 # [AURA FIX 404] Rota mapeada via app.py
 @api_bp.route('/frete/cotar', methods=['POST'])
 @token_required
@@ -366,19 +629,34 @@ def rota_cotar_frete(current_user_id):
 def webhook_asaas():
     """
     Webhook para receber confirmações de pagamento do Asaas.
+    Rota pública — não usa @token_required (chamada feita pelo servidor Asaas).
     """
     try:
         dados = request.get_json(force=True)
-        evento = dados.get("event")
+        evento  = dados.get("event")
         payment = dados.get("payment", {})
-        
+
         if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
             payment_id = payment.get("id")
+            if not payment_id:
+                return jsonify({"status": "ignorado", "motivo": "sem payment_id"}), 200
+
             pedido = mongo_db["pedidos"].find_one({"asaas_id": payment_id})
             if pedido:
-                logger.info(f"✅ Pagamento confirmado para pedido {pedido.get('asaas_id')}.")
-                
+                mongo_db["pedidos"].update_one(
+                    {"asaas_id": payment_id},
+                    {"$set": {
+                        "status": "PAGO",
+                        "pago_em": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat()
+                    }}
+                )
+                logger.info(f"✅ Pedido {payment_id} atualizado para PAGO no Atlas.")
+            else:
+                logger.warning(f"⚠️ Webhook Asaas: pedido {payment_id} não encontrado no Atlas.")
+
         return jsonify({"status": "received"}), 200
+
     except Exception as e:
         logger.error(f"Erro no webhook Asaas: {e}")
         return jsonify({"erro": "Internal Error"}), 500

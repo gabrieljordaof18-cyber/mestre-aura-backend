@@ -44,27 +44,35 @@ except Exception as e:
 # ==============================================================
 
 def buscar_usuario_por_id(user_id: str):
-    """Busca o usuário garantindo compatibilidade com IDs do RevenueCat/Base44."""
-    if mongo_db is None: 
+    """
+    Busca o usuário por _id (ObjectId nativo) OU por base44_id (string legada).
+    Garante compatibilidade durante a migração do Base44 para autenticação nativa.
+    """
+    if mongo_db is None:
         logger.error("❌ MongoDB inacessível em buscar_usuario_por_id")
         return None
     try:
-        # [AURA FIX] Limpeza rigorosa para IDs vindos de diferentes headers (JWT/Auth)
         clean_id = str(user_id).strip().replace('"', '').replace("'", "")
-        
-        # Verificação de segurança para evitar erro de ObjectId inválido
-        if not ObjectId.is_valid(clean_id):
-            logger.warning(f"⚠️ ID de usuário inválido recebido: {clean_id}")
-            return None
 
-        # Buscamos na coleção 'usuarios' conforme sua estrutura manual no Atlas
-        doc = mongo_db["usuarios"].find_one({"_id": ObjectId(clean_id)})
+        doc = None
+
+        # 1. Tenta como ObjectId nativo do MongoDB
+        if ObjectId.is_valid(clean_id):
+            doc = mongo_db["usuarios"].find_one({"_id": ObjectId(clean_id)})
+
+        # 2. Fallback: busca pelo campo base44_id (IDs legados do Base44)
+        if not doc:
+            doc = mongo_db["usuarios"].find_one({"base44_id": clean_id})
+            if doc:
+                logger.info(f"✅ Usuário encontrado via base44_id: {clean_id}")
+
         if doc:
             doc["_id"] = str(doc["_id"])
-            # [AURA SYNC] Fallback imediato se o doc for antigo e não tiver campos de assinatura
             if "plano" not in doc: doc["plano"] = "free"
             if "status_assinatura" not in doc: doc["status_assinatura"] = "inativo"
-            
+        else:
+            logger.warning(f"⚠️ Usuário não encontrado por _id nem base44_id: {clean_id}")
+
         return doc
     except Exception as e:
         logger.error(f"Erro ao buscar usuário ID {user_id}: {e}")
@@ -277,6 +285,9 @@ if mongo_db is not None:
             
         if "integracoes.strava.atleta_id_1" not in indices_atuais:
             colecao_usuarios.create_index("integracoes.strava.atleta_id", sparse=True)
+
+        if "base44_id_1" not in indices_atuais:
+            colecao_usuarios.create_index("base44_id", sparse=True)
             
         if "xp_total_-1" not in indices_atuais:
             colecao_usuarios.create_index([("xp_total", -1)])

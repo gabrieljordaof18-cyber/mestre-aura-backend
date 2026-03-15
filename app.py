@@ -15,19 +15,10 @@ logger = logging.getLogger("AURA_APP")
 app = Flask(__name__)
 
 # ===================================================
-# 🔐 CORS — URL do Render como origem principal
+# 🔐 CORS — CONFIGURAÇÃO ULTRA-ROBUSTA PARA IOS
 # ===================================================
-# FRONTEND_URL deve ser configurada no painel do Render.
-# Ex: https://meu-app.onrender.com
-# Webhooks externos (Asaas, RevenueCat) precisam de origins="*" pois
-# partem de servidores de terceiros — não de um browser.
-
-_FRONTEND_URL = os.getenv("FRONTEND_URL", "")
-_ALLOWED_ORIGINS = (
-    [_FRONTEND_URL, "http://localhost:3000", "http://localhost:5050", "capacitor://localhost"]
-    if _FRONTEND_URL
-    else "*"
-)
+# Permitimos origins="*" temporariamente para garantir que o 
+# handshake do Capacitor (OPTIONS) não retorne 404/403.
 
 _CORS_HEADERS = [
     "Authorization",
@@ -38,26 +29,33 @@ _CORS_HEADERS = [
 ]
 
 CORS(app, resources={
-    # Rotas de webhook abertas para servidores externos (Asaas / RevenueCat)
+    # Rotas de webhook abertas para servidores externos
     r"/api/webhook/*": {
         "origins": "*",
         "allow_headers": _CORS_HEADERS,
         "methods": ["POST", "OPTIONS"]
     },
-    # Todas as demais rotas — restritas à URL do Render (ou * em desenvolvimento)
+    # Ajuste para garantir que o iPhone (capacitor://localhost) seja aceito
     r"/*": {
-        "origins": _ALLOWED_ORIGINS,
+        "origins": "*",  # Em produção, o ideal é filtrar, mas para o Fix do Login usamos "*"
         "allow_headers": _CORS_HEADERS,
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "expose_headers": ["Content-Range", "X-Content-Range"]
+        "expose_headers": ["Content-Range", "X-Content-Range"],
+        "supports_credentials": True
     }
 })
 
 # 2. Registro de Rotas (Blueprints)
-# [AURA FIX 404] Definimos o prefixo global aqui de forma definitiva. 
-# As rotas de webhook (/api/webhook/revenuecat) e frete já estão contempladas no prefixo /api.
+# Registramos com o prefixo /api. 
+# Se no rotas_api.py a rota for /auth/register, ela vira /api/auth/register
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(strava_bp, url_prefix='/strava')
+
+# [AURA DEBUG] Lista todas as rotas no log do Render ao iniciar
+with app.app_context():
+    logger.info("📍 Mapeamento de Rotas Ativo:")
+    for rule in app.url_map.iter_rules():
+        logger.info(f"Rota: {rule.rule} | Métodos: {rule.methods}")
 
 # 3. Rota Raiz (Health Check & Version Control)
 @app.route('/')
@@ -65,7 +63,7 @@ def health_check():
     return jsonify({
         "status": "online",
         "system": "Aura Performance OS",
-        "version": "3.3.0-NATIVE-IAP", # Versão atualizada para suporte a RevenueCat e Apple Sign-in
+        "version": "3.3.0-NATIVE-IAP",
         "env": os.getenv("FLASK_ENV", "production"),
         "engine": "Aura-Core-Hybrid-Engine",
         "features": [
@@ -77,11 +75,10 @@ def health_check():
         ]
     })
 
-# 4. Tratamento Global de Erros (Evita crash no App)
+# 4. Tratamento Global de Erros
 @app.errorhandler(404)
 def not_found(e):
-    # [AURA LOG] Ajuda a identificar qual URL exata está falhando nos logs do Render
-    logger.warning(f"⚠️ Rota não encontrada: {request.path}")
+    logger.warning(f"⚠️ Rota não encontrada: {request.path} [MÉTODO: {request.method}]")
     return jsonify({"erro": f"Rota {request.path} não encontrada no Aura OS"}), 404
 
 @app.errorhandler(400)
@@ -93,14 +90,14 @@ def server_error(e):
     logger.error(f"❌ Erro Crítico Interno: {e}")
     return jsonify({"erro": "Falha interna no servidor Aura. Verifique os logs no Render."}), 500
 
-# Verificação de Variáveis de Ambiente Críticas para o Dia de Lançamento
+# Verificação de Variáveis de Ambiente
 if not os.getenv("MONGODB_URI"):
-    logger.warning("⚠️ MONGODB_URI não detectada! O banco de dados ficará offline.")
+    logger.warning("⚠️ MONGODB_URI não detectada!")
 
 if not os.getenv("MELHOR_ENVIO_TOKEN"):
-    logger.warning("⚠️ MELHOR_ENVIO_TOKEN ausente! O cálculo de frete não funcionará.")
+    logger.warning("⚠️ MELHOR_ENVIO_TOKEN ausente!")
 
-# [AURA LOCAL LAUNCH] Bloco para rodar no seu MacBook Pro
+# [AURA LOCAL LAUNCH]
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5050)) 
     logger.info(f"🚀 Aura OS Híbrido iniciando localmente na porta {port}...")
