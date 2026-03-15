@@ -205,7 +205,7 @@ def get_status_jogador(current_user_id):
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
         
         return jsonify({
-            # Identidade — ambos os nomes para compatibilidade total frontend/backend
+            # Identidade
             "id":       current_user_id,
             "user_id":  current_user_id,
             "email":    dados.get("email", ""),
@@ -213,12 +213,14 @@ def get_status_jogador(current_user_id):
             "foto":     dados.get("foto_perfil", ""),
             # Progressão
             "xp_total":         xp_total,
-            "moedas":           int(dados.get("moedas", xp_total)),  # saldo gastável
+            "moedas":           int(dados.get("moedas", xp_total)),
             "saldo_cristais":   cristais,
             "nivel":            nivel_atual,
             "barra_progresso":  max(0, min(100, progresso)),
             "xp_falta":         max(0, range_nivel - xp_no_nivel),
             "objetivo":         dados.get("objetivo", "Performance"),
+            # Regra de Ouro: controla o fluxo Login → Onboarding → Home
+            "onboarding_completo": dados.get("onboarding_completo", False),
             # Assinatura
             "plano":              plano,
             "status_assinatura":  status_assinatura,
@@ -543,9 +545,12 @@ def listar_produtos():
             "_id": 1, "nome": 1, "marca": 1, "preco_aura": 1, "preco_original": 1,
             "custo_moedas": 1, "nivel_minimo": 1, "imagem_url": 1, "categoria": 1,
             "estoque": 1, "peso_kg": 1, "largura_cm": 1, "altura_cm": 1,
-            "comprimento_cm": 1
+            "comprimento_cm": 1, "destaque": 1, "descricao": 1, "parceiro": 1,
+            "tamanhos": 1, "cep_origem": 1
         }
-        docs = list(mongo_db["ProdutosLoja"].find({"estoque": True}, campos))
+        # Retorna todos os produtos cadastrados (não filtra por estoque para não
+        # exibir tela vazia quando o campo ainda não foi populado nos documentos)
+        docs = list(mongo_db["ProdutosLoja"].find({}, campos))
         for d in docs:
             d["id"] = str(d.pop("_id"))
         return jsonify(docs), 200
