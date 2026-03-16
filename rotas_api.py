@@ -375,11 +375,263 @@ def configurar_onboarding(current_user_id):
 @api_bp.route('/cla/ranking', methods=['GET'])
 def get_ranking_cla():
     try:
-        ranking = obter_ranking_global(limite=50) 
+        ranking = obter_ranking_global(limite=50)
         return jsonify({"ranking": ranking})
     except Exception as e:
         logger.error(f"Erro ao buscar ranking: {e}")
         return jsonify({"ranking": []})
+
+
+@api_bp.route('/cla/criar', methods=['POST'])
+@token_required
+def criar_cla(current_user_id):
+    """Cria um novo clã e define o criador como líder (owner). Gratuito."""
+    try:
+        dados = request.get_json(force=True)
+        nome = str(dados.get("nome", "")).strip()
+        if not nome:
+            return jsonify({"erro": "Nome do clã é obrigatório"}), 400
+
+        if mongo_db is None:
+            return jsonify({"erro": "Banco de dados indisponível"}), 500
+
+        # Garante unicidade do nome (case-insensitive)
+        existente = mongo_db["Clas"].find_one({"nome": {"$regex": f"^{nome}$", "$options": "i"}})
+        if existente:
+            return jsonify({"erro": "Já existe um clã com esse nome"}), 409
+
+        agora = datetime.now().isoformat()
+        doc_cla = {
+            "nome":               nome,
+            "descricao":          str(dados.get("descricao", "")).strip(),
+            "emblema":            str(dados.get("emblema", "shield")),
+            "cor":                str(dados.get("cor", "#FFD700")),
+            "tags":               list(dados.get("tags", [])),
+            "lider_id":           current_user_id,
+            "membros": [{
+                "user_id":        current_user_id,
+                "cargo":          "owner",
+                "xp_contribuicao": 0,
+                "joined_at":      agora
+            }],
+            "nivel":              1,
+            "total_xp":           0,
+            "missao_ativa_tipo":  (dados.get("tags") or ["Híbrido"])[0].split(" ")[0] if dados.get("tags") else "Híbrido",
+            "missao_progresso":   0,
+            "missao_meta":        50,
+            "ativo":              True,
+            "data_criacao":       agora,
+            "updated_at":         agora
+        }
+
+        resultado = mongo_db["Clas"].insert_one(doc_cla)
+        cla_id = str(resultado.inserted_id)
+
+        # Atualiza o usuário com o ID do clã recém criado
+        salvar_memoria(current_user_id, {"cla_atual_id": cla_id})
+
+        doc_cla["id"] = cla_id
+        doc_cla.pop("_id", None)
+        logger.info(f"🏰 Clã '{nome}' criado por {current_user_id}")
+        return jsonify(doc_cla), 201
+
+    except Exception as e:
+        logger.error(f"Erro ao criar clã para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/listar', methods=['GET'])
+def listar_clas():
+    """Retorna todos os clãs ativos (público)."""
+    try:
+        if mongo_db is None:
+            return jsonify([]), 200
+        cursor = mongo_db["Clas"].find(
+            {"ativo": True},
+            {"_id": 1, "nome": 1, "descricao": 1, "emblema": 1, "cor": 1,
+             "tags": 1, "nivel": 1, "total_xp": 1, "membros": 1}
+        ).sort("total_xp", -1).limit(50)
+        clans = []
+        for d in cursor:
+            d["id"] = str(d.pop("_id"))
+            d["num_membros"] = len(d.get("membros", []))
+            d.pop("membros", None)
+            clans.append(d)
+        return jsonify(clans), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar clãs: {e}")
+        return jsonify([]), 200
+
+
+@api_bp.route('/cla/entrar', methods=['POST'])
+@token_required
+def entrar_cla(current_user_id):
+    """Adiciona o usuário a um clã existente."""
+    try:
+        dados = request.get_json(force=True)
+        cla_id = str(dados.get("cla_id", "")).strip()
+        if not cla_id or not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID do clã inválido"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id), "ativo": True})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        # Verifica se já é membro
+        membros = cla.get("membros", [])
+        if any(m["user_id"] == current_user_id for m in membros):
+            return jsonify({"erro": "Você já é membro deste clã"}), 409
+
+        agora = datetime.now().isoformat()
+        mongo_db["Clas"].update_one(
+            {"_id": ObjectId(cla_id)},
+            {"$push": {"membros": {
+                "user_id": current_user_id,
+                "cargo": "member",
+                "xp_contribuicao": 0,
+                "joined_at": agora
+            }}, "$set": {"updated_at": agora}}
+        )
+        salvar_memoria(current_user_id, {"cla_atual_id": cla_id})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao entrar no clã: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/sair', methods=['POST'])
+@token_required
+def sair_cla(current_user_id):
+    """Remove o usuário do clã."""
+    try:
+        dados = request.get_json(force=True)
+        cla_id = str(dados.get("cla_id", "")).strip()
+        if not cla_id or not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID do clã inválido"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        agora = datetime.now().isoformat()
+        mongo_db["Clas"].update_one(
+            {"_id": ObjectId(cla_id)},
+            {"$pull": {"membros": {"user_id": current_user_id}},
+             "$set": {"updated_at": agora}}
+        )
+        salvar_memoria(current_user_id, {"cla_atual_id": None})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao sair do clã: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/chat', methods=['POST'])
+@token_required
+def enviar_chat_cla(current_user_id):
+    """Salva uma mensagem no chat do clã."""
+    try:
+        dados = request.get_json(force=True)
+        cla_id = str(dados.get("cla_id", "")).strip()
+        message = str(dados.get("message", "")).strip()
+        if not cla_id or not message:
+            return jsonify({"erro": "cla_id e message são obrigatórios"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        doc_msg = {
+            "cla_id":    cla_id,
+            "user_id":   current_user_id,
+            "user_name": str(dados.get("user_name", "Membro")),
+            "message":   message,
+            "created_at": datetime.now().isoformat()
+        }
+        mongo_db["chat_cla"].insert_one(doc_msg)
+        doc_msg["id"] = str(doc_msg.pop("_id"))
+        return jsonify(doc_msg), 201
+    except Exception as e:
+        logger.error(f"Erro no chat do clã: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# Rotas com parâmetro de ID devem ficar APÓS as rotas fixas para evitar conflitos
+@api_bp.route('/cla/<cla_id>', methods=['GET'])
+@token_required
+def get_cla(current_user_id, cla_id):
+    """Retorna os dados de um clã pelo ID."""
+    try:
+        if mongo_db is None or not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID inválido"}), 400
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+        cla["id"] = str(cla.pop("_id"))
+        return jsonify(cla), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar clã {cla_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/membros', methods=['GET'])
+@token_required
+def get_membros_cla(current_user_id, cla_id):
+    """Retorna os membros de um clã com dados básicos do usuário."""
+    try:
+        if mongo_db is None or not ObjectId.is_valid(cla_id):
+            return jsonify([]), 200
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)}, {"membros": 1})
+        if not cla:
+            return jsonify([]), 200
+
+        membros_raw = cla.get("membros", [])
+        membros_out = []
+        for m in membros_raw:
+            uid = m.get("user_id", "")
+            user_doc = {}
+            if ObjectId.is_valid(uid):
+                user_doc = mongo_db["usuarios"].find_one(
+                    {"_id": ObjectId(uid)},
+                    {"nome": 1, "nivel": 1, "foto_perfil": 1, "xp_total": 1}
+                ) or {}
+            cargo_key = m.get("cargo", "member")
+            membros_out.append({
+                "id":       uid,
+                "nome":     user_doc.get("nome", "Atleta"),
+                "nivel":    user_doc.get("nivel", 1),
+                "foto":     user_doc.get("foto_perfil", ""),
+                "xp":       m.get("xp_contribuicao", user_doc.get("xp_total", 0)),
+                "roleKey":  cargo_key,
+                "cargo":    {"owner": "Líder", "co-leader": "Co-Líder", "member": "Membro"}.get(cargo_key, "Membro"),
+                "joined_at": m.get("joined_at", "")
+            })
+        # Ordena: líder primeiro, depois por XP
+        membros_out.sort(key=lambda x: (0 if x["roleKey"] == "owner" else 1, -x["xp"]))
+        return jsonify(membros_out), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar membros do clã {cla_id}: {e}")
+        return jsonify([]), 200
+
+
+@api_bp.route('/cla/<cla_id>/chat', methods=['GET'])
+@token_required
+def get_chat_cla(current_user_id, cla_id):
+    """Retorna as últimas 100 mensagens do chat do clã."""
+    try:
+        if mongo_db is None:
+            return jsonify([]), 200
+        cursor = mongo_db["chat_cla"].find(
+            {"cla_id": cla_id},
+            {"_id": 1, "cla_id": 1, "user_id": 1, "user_name": 1, "message": 1, "created_at": 1}
+        ).sort("created_at", 1).limit(100)
+        msgs = []
+        for m in cursor:
+            m["id"] = str(m.pop("_id"))
+            msgs.append(m)
+        return jsonify(msgs), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar chat do clã {cla_id}: {e}")
+        return jsonify([]), 200
+
 
 # ===================================================
 # 🧠 COMANDO DO MESTRE (IA HÍBRIDA)
