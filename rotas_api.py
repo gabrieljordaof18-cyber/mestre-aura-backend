@@ -15,7 +15,10 @@ from data_manager import (
     obter_ranking_global, ler_plano, mongo_db,
     buscar_usuario_por_email, criar_novo_usuario, atualizar_usuario
 )
-from logic_gamificacao import gerar_missoes_diarias, aplicar_xp
+from logic_gamificacao import (
+    gerar_missoes_diarias, aplicar_xp, normalizar_ofensiva,
+    registrar_conclusao_missao, ativar_seguro_ofensiva
+)
 from logic_equilibrio import calcular_e_atualizar_equilibrio
 from logic import processar_comando 
 from logic_feedback import gerar_feedback_emocional
@@ -118,6 +121,13 @@ def registrar_usuario():
         token = gerar_token_jwt(novo_user["_id"])
         logger.info(f"🆕 Novo usuário registrado nativamente: {email}")
 
+        seguro_ativo = False
+        try:
+            if dados.get("seguro_expira_em"):
+                seguro_ativo = datetime.fromisoformat(str(dados.get("seguro_expira_em"))) >= datetime.now()
+        except Exception:
+            seguro_ativo = False
+
         return jsonify({
             "sucesso": True,
             "token": token,
@@ -183,6 +193,12 @@ def get_status_jogador(current_user_id):
         dados = carregar_memoria(current_user_id)
         if not dados: 
             return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
+
+        # Aplica regra de quebra da ofensiva antes de devolver status
+        status_ofensiva = normalizar_ofensiva(current_user_id)
+        dados = carregar_memoria(current_user_id)
+        if not dados:
+            return jsonify({"erro": "Perfil não encontrado no Atlas"}), 404
             
         # [AURA FIX] Inicialização correta das variáveis conforme o schema 3.0
         xp_total = int(dados.get("xp_total", 0))
@@ -219,12 +235,17 @@ def get_status_jogador(current_user_id):
             "barra_progresso":  max(0, min(100, progresso)),
             "xp_falta":         max(0, range_nivel - xp_no_nivel),
             "objetivo":         dados.get("objetivo", "Performance"),
+            "ofensiva_atual":   int(dados.get("ofensiva_atual", 0)),
+            "ultima_missao_data": dados.get("ultima_missao_data", ""),
+            "seguro_expira_em": dados.get("seguro_expira_em", ""),
+            "seguro_ativo": seguro_ativo,
             # Regra de Ouro: controla o fluxo Login → Onboarding → Home
             "onboarding_completo": dados.get("onboarding_completo", False),
             # Assinatura
             "plano":              plano,
             "status_assinatura":  status_assinatura,
-            "vencimento":         vencimento
+            "vencimento":         vencimento,
+            "ofensiva_quebrada": status_ofensiva.get("quebrada", False)
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
@@ -385,27 +406,79 @@ def concluir_missao(current_user_id):
     try:
         dados = request.get_json(force=True)
         missao_id = dados.get("id")
+        missao_tipo = str(dados.get("tipo", "")).strip().lower()
         
         memoria = carregar_memoria(current_user_id)
         gamificacao = memoria.get("gamificacao", {})
         missoes = gamificacao.get("missoes_ativas", [])
         
         for m in missoes:
-            if m["id"] == missao_id and not m.get("concluida"):
+            id_match = missao_id and m.get("id") == missao_id
+            tipo_match = missao_tipo and (
+                str(m.get("categoria", "")).strip().lower() == missao_tipo
+                or str(m.get("tipo", "")).strip().lower() == missao_tipo
+                or str(m.get("titulo", "")).strip().lower() == missao_tipo
+            )
+            if (id_match or tipo_match) and not m.get("concluida"):
                 m["concluida"] = True
                 salvar_memoria(current_user_id, memoria)
                 
                 resultado = aplicar_xp(current_user_id, m.get("xp", 0))
+                dados_ofensiva = registrar_conclusao_missao(current_user_id)
                 return jsonify({
                     "sucesso": True, 
+                    "xp_ganho": m.get("xp", 0),
                     "novo_nivel": resultado["novo_nivel"],
                     "novo_xp": resultado["novo_xp"],
-                    "cristais_ganhos": resultado.get("cristais_ganhos", 0)
+                    "cristais_ganhos": resultado.get("cristais_ganhos", 0),
+                    "ofensiva_atual": dados_ofensiva.get("ofensiva_atual", 0),
+                    "seguro_expira_em": dados_ofensiva.get("seguro_expira_em", "")
                 })
                 
         return jsonify({"erro": "Missão inválida ou já concluída"}), 400
     except Exception as e:
         return jsonify({"erro": "Falha ao concluir missão"}), 500
+
+
+@api_bp.route('/usuario/ofensiva/ativar_seguro', methods=['POST'])
+@token_required
+def ativar_seguro_streak(current_user_id):
+    """
+    Ativa o Seguro Ofensiva por 7 dias e debita cristais.
+    Custo padrão: 200 cristais (item p2 do Mercado).
+    """
+    try:
+        dados = request.get_json(force=True) or {}
+        custo = int(dados.get("custo_cristais", 200))
+        dias = int(dados.get("dias", 7))
+        if custo <= 0:
+            return jsonify({"erro": "Custo inválido"}), 400
+
+        memoria = carregar_memoria(current_user_id)
+        if not memoria:
+            return jsonify({"erro": "Usuário não encontrado"}), 404
+
+        saldo = int(memoria.get("saldo_cristais", 0))
+        if saldo < custo:
+            return jsonify({"erro": "Cristais insuficientes"}), 400
+
+        memoria["saldo_cristais"] = saldo - custo
+        if not salvar_memoria(current_user_id, memoria):
+            return jsonify({"erro": "Falha ao debitar cristais"}), 500
+
+        resultado = ativar_seguro_ofensiva(current_user_id, dias=dias)
+        if not resultado.get("sucesso"):
+            return jsonify({"erro": resultado.get("erro", "Falha ao ativar seguro")}), 500
+
+        return jsonify({
+            "sucesso": True,
+            "saldo_cristais": saldo - custo,
+            "ofensiva_atual": int(memoria.get("ofensiva_atual", 0)),
+            "seguro_expira_em": resultado.get("seguro_expira_em", "")
+        }), 200
+    except Exception as e:
+        logger.error(f"Erro ao ativar seguro ofensiva para {current_user_id}: {e}")
+        return jsonify({"erro": "Falha ao ativar seguro de ofensiva"}), 500
 
 # ===================================================
 # ⚕️ BIOHACKING E SINCRONIZAÇÃO

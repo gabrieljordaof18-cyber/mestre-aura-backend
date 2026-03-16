@@ -1,6 +1,6 @@
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 # Importações da Nova Arquitetura
@@ -9,6 +9,29 @@ from data_manager import mongo_db
 
 # Configuração de Logs
 logger = logging.getLogger("AURA_GAMIFICACAO")
+
+
+def _parse_iso_date(valor: str):
+    """Converte data ISO/AAAA-MM-DD para objeto date."""
+    if not valor:
+        return None
+    try:
+        return datetime.fromisoformat(str(valor)).date()
+    except Exception:
+        try:
+            return datetime.strptime(str(valor)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+
+def _parse_iso_datetime(valor: str):
+    """Converte data ISO para datetime."""
+    if not valor:
+        return None
+    try:
+        return datetime.fromisoformat(str(valor))
+    except Exception:
+        return None
 
 # ======================================================
 # ⚙️ CONSTANTES DE JOGO (BALANCEAMENTO 3.1 - NATIVE READY)
@@ -166,6 +189,112 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
         "moedas_ganhas": ganho_moedas,
         "cristais_ganhos": ganho_cristais + bonus_level_up_cristais,
         "subiu": subiu_nivel
+    }
+
+
+def normalizar_ofensiva(user_id: str) -> Dict[str, Any]:
+    """
+    Aplica a regra de quebra da ofensiva:
+    - Se passou 1+ dia sem missão e sem seguro ativo, zera ofensiva.
+    """
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return {"ofensiva_atual": 0, "seguro_expira_em": ""}
+
+    ofensiva = int(memoria.get("ofensiva_atual", 0))
+    ultima_data = _parse_iso_date(memoria.get("ultima_missao_data", ""))
+    seguro_expira_em = memoria.get("seguro_expira_em", "")
+    seguro_dt = _parse_iso_datetime(seguro_expira_em)
+    agora = datetime.now()
+    hoje = agora.date()
+
+    if ultima_data is not None:
+        dias_sem_missao = (hoje - ultima_data).days
+        if dias_sem_missao > 1:
+            seguro_ativo = bool(seguro_dt and seguro_dt >= agora)
+            if not seguro_ativo and ofensiva > 0:
+                memoria["ofensiva_atual"] = 0
+                memoria["seguro_expira_em"] = ""
+                if "gamificacao" in memoria and "estatisticas" in memoria["gamificacao"]:
+                    memoria["gamificacao"]["estatisticas"]["dias_seguidos"] = 0
+                salvar_memoria(user_id, memoria)
+                return {"ofensiva_atual": 0, "seguro_expira_em": "", "quebrada": True}
+
+    return {
+        "ofensiva_atual": int(memoria.get("ofensiva_atual", 0)),
+        "seguro_expira_em": memoria.get("seguro_expira_em", ""),
+        "quebrada": False
+    }
+
+
+def registrar_conclusao_missao(user_id: str) -> Dict[str, Any]:
+    """
+    Atualiza a ofensiva após concluir missão:
+    - +1 se primeira missão do dia
+    - mantém se já concluiu hoje
+    - consome o seguro se estava ativo durante a conclusão
+    """
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return {"ofensiva_atual": 0, "seguro_expira_em": ""}
+
+    normalizar_ofensiva(user_id)
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return {"ofensiva_atual": 0, "seguro_expira_em": ""}
+
+    agora = datetime.now()
+    hoje = agora.date()
+    ultima_data = _parse_iso_date(memoria.get("ultima_missao_data", ""))
+    ofensiva = int(memoria.get("ofensiva_atual", 0))
+    seguro_expira_em = memoria.get("seguro_expira_em", "")
+    seguro_dt = _parse_iso_datetime(seguro_expira_em)
+    seguro_ativo = bool(seguro_dt and seguro_dt >= agora)
+
+    # Incrementa só 1x por dia
+    if ultima_data != hoje:
+        ofensiva += 1
+        memoria["ofensiva_atual"] = ofensiva
+        memoria["ultima_missao_data"] = agora.isoformat()
+
+    # Se concluiu missão com seguro ativo, consome proteção
+    if seguro_ativo:
+        memoria["seguro_expira_em"] = ""
+
+    if "gamificacao" not in memoria:
+        memoria["gamificacao"] = {}
+    if "estatisticas" not in memoria["gamificacao"]:
+        memoria["gamificacao"]["estatisticas"] = {"missoes_completadas": 0, "total_atividades": 0, "dias_seguidos": 0}
+    memoria["gamificacao"]["estatisticas"]["dias_seguidos"] = int(memoria.get("ofensiva_atual", ofensiva))
+
+    salvar_memoria(user_id, memoria)
+    return {
+        "ofensiva_atual": int(memoria.get("ofensiva_atual", ofensiva)),
+        "ultima_missao_data": memoria.get("ultima_missao_data", ""),
+        "seguro_expira_em": memoria.get("seguro_expira_em", "")
+    }
+
+
+def ativar_seguro_ofensiva(user_id: str, dias: int = 7) -> Dict[str, Any]:
+    """Ativa proteção da ofensiva por N dias a partir de agora."""
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return {"sucesso": False, "erro": "Usuário não encontrado"}
+
+    agora = datetime.now()
+    seguro_atual = _parse_iso_datetime(memoria.get("seguro_expira_em", ""))
+    base = seguro_atual if (seguro_atual and seguro_atual > agora) else agora
+    nova_expiracao = base + timedelta(days=max(1, dias))
+
+    memoria["seguro_expira_em"] = nova_expiracao.isoformat()
+    sucesso = salvar_memoria(user_id, memoria)
+    if not sucesso:
+        return {"sucesso": False, "erro": "Falha ao ativar seguro"}
+
+    return {
+        "sucesso": True,
+        "seguro_expira_em": memoria["seguro_expira_em"],
+        "dias_protecao": dias
     }
 
 def calcular_xp_fisiologico(dados_fisiologicos: Dict[str, Any]) -> int:

@@ -78,6 +78,10 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
                 "dias_seguidos": 0
             }
         },
+        # --- [AURA NEW] OFENSIVA (STREAKS) ---
+        "ofensiva_atual": 0,
+        "ultima_missao_data": "",
+        "seguro_expira_em": "",
 
         # --- 7. INVENTÁRIO ---
         "inventario": {

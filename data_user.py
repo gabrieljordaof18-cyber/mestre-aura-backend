@@ -65,6 +65,13 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
                     "dieta_ativa": False,
                     "ultima_atualizacao_ia": datetime.now().isoformat()
                 }
+            # Campos de ofensiva (streak)
+            if "ofensiva_atual" not in usuario:
+                usuario["ofensiva_atual"] = 0
+            if "ultima_missao_data" not in usuario:
+                usuario["ultima_missao_data"] = ""
+            if "seguro_expira_em" not in usuario:
+                usuario["seguro_expira_em"] = ""
             
             return usuario
         else:
