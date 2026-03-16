@@ -257,6 +257,11 @@ def get_status_jogador(current_user_id):
             "ofensiva_quebrada":  status_ofensiva.get("quebrada", False),
             # Clãs
             "cla_atual_id":       dados.get("cla_atual_id", ""),
+            # XP Dobrado (Poção de XP)
+            "xp_dobrado_ativo":   _checar_beneficio_ativo(dados, "xp_dobrado_expira_em"),
+            "xp_dobrado_expira_em": dados.get("xp_dobrado_expira_em", ""),
+            # Cupons comprados no Laboratório
+            "cupons_ativos":      dados.get("cupons_ativos", []),
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
@@ -292,6 +297,17 @@ def get_plano_dieta(current_user_id):
         logger.error(f"Erro ao ler dieta: {e}")
         return jsonify({"erro": "Erro ao carregar dieta"}), 500
 
+def _checar_beneficio_ativo(dados: dict, campo_expiracao: str) -> bool:
+    """Retorna True se o benefício ainda está dentro do prazo de expiração."""
+    try:
+        val = dados.get(campo_expiracao, "")
+        if val:
+            return datetime.fromisoformat(str(val)) >= datetime.now()
+    except Exception:
+        pass
+    return False
+
+
 @api_bp.route('/usuario/gastar_moedas', methods=['POST'])
 @token_required
 def endpoint_gastar_moedas(current_user_id):
@@ -306,6 +322,126 @@ def endpoint_gastar_moedas(current_user_id):
     except Exception as e:
         logger.error(f"Erro ao gastar moedas para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/usuario/ativar_xp_dobrado', methods=['POST'])
+@token_required
+def ativar_xp_dobrado(current_user_id):
+    """Ativa a Poção de XP Dobrado por 24h, debitando Cristais."""
+    CUSTO_CRISTAIS = 150
+    try:
+        dados = carregar_memoria(current_user_id)
+        cristais = int(dados.get("saldo_cristais", 0))
+        if cristais < CUSTO_CRISTAIS:
+            return jsonify({"erro": f"Cristais insuficientes. Necessário: {CUSTO_CRISTAIS}."}), 400
+        expira = (datetime.now() + timedelta(hours=24)).isoformat()
+        salvar_memoria(current_user_id, {
+            "saldo_cristais":       cristais - CUSTO_CRISTAIS,
+            "xp_dobrado_expira_em": expira,
+        })
+        logger.info(f"⚗️ XP Dobrado ativado para {current_user_id} até {expira}")
+        return jsonify({"sucesso": True, "xp_dobrado_expira_em": expira})
+    except Exception as e:
+        logger.error(f"Erro ao ativar XP dobrado para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/usuario/ativar_cupom_premium', methods=['POST'])
+@token_required
+def ativar_cupom_premium(current_user_id):
+    """Compra o cupom AURA15 no Laboratório, debitando Cristais e armazenando em cupons_ativos."""
+    CUSTO_CRISTAIS = 300
+    try:
+        dados = carregar_memoria(current_user_id)
+        cristais = int(dados.get("saldo_cristais", 0))
+        if cristais < CUSTO_CRISTAIS:
+            return jsonify({"erro": f"Cristais insuficientes. Necessário: {CUSTO_CRISTAIS}."}), 400
+        cupons = list(dados.get("cupons_ativos", []))
+        if "AURA15" not in cupons:
+            cupons.append("AURA15")
+        salvar_memoria(current_user_id, {
+            "saldo_cristais": cristais - CUSTO_CRISTAIS,
+            "cupons_ativos":  cupons,
+        })
+        logger.info(f"🏷️ Cupom AURA15 ativado para {current_user_id}")
+        return jsonify({"sucesso": True, "codigo": "AURA15"})
+    except Exception as e:
+        logger.error(f"Erro ao ativar cupom premium para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/checkout/validar_cupom', methods=['POST'])
+@token_required
+def validar_cupom_checkout(current_user_id):
+    """Valida um código de cupom. AURA12 é público. AURA15 exige compra prévia."""
+    try:
+        dados = request.get_json(force=True)
+        codigo = str(dados.get("codigo", "")).upper().strip()
+        if not codigo:
+            return jsonify({"valido": False, "erro": "Código vazio."}), 400
+
+        if codigo == "AURA12":
+            return jsonify({"valido": True, "desconto": 0.12, "descricao": "12% OFF — Parceiros Aura"})
+
+        if codigo == "AURA15":
+            user_data = carregar_memoria(current_user_id)
+            if "AURA15" in user_data.get("cupons_ativos", []):
+                return jsonify({"valido": True, "desconto": 0.15, "descricao": "15% OFF — Cupom Premium"})
+            return jsonify({"valido": False, "erro": "Adquira o cupom AURA15 no Mercado de Cristais antes de usá-lo."})
+
+        return jsonify({"valido": False, "erro": "Cupom não reconhecido."})
+    except Exception as e:
+        logger.error(f"Erro ao validar cupom para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/usuario/voucher/resgatar', methods=['POST'])
+@token_required
+def resgatar_voucher(current_user_id):
+    """Resgata um voucher da aba Vouchers do Mercado."""
+    CUSTOS = {"v1": 4000, "v2": 15000, "v3": 0, "v4": 1000}
+    try:
+        dados_req = request.get_json(force=True)
+        voucher_id = str(dados_req.get("voucher_id", "")).strip()
+        if voucher_id not in CUSTOS:
+            return jsonify({"erro": "Voucher inválido."}), 400
+
+        user_data = carregar_memoria(current_user_id)
+        moedas = int(user_data.get("moedas", 0))
+        custo  = CUSTOS[voucher_id]
+
+        if custo > 0 and moedas < custo:
+            return jsonify({"erro": f"Aura Coins insuficientes. Necessário: {custo}."}), 400
+
+        if voucher_id == "v3":  # Free Trial 24h Plus
+            if user_data.get("trial_usado"):
+                return jsonify({"erro": "Trial já foi utilizado anteriormente."}), 400
+            expira = (datetime.now() + timedelta(hours=24)).isoformat()
+            salvar_memoria(current_user_id, {
+                "plano": "plus", "trial_usado": True, "trial_expira_em": expira
+            })
+            return jsonify({"sucesso": True, "plano": "plus", "trial_expira_em": expira})
+
+        if voucher_id == "v4":  # 1.000 Coins → 50 Cristais
+            resultado = gastar_moedas(current_user_id, custo)
+            if not resultado.get("sucesso"):
+                return jsonify({"erro": "Falha ao debitar Coins."}), 400
+            cristais = int(user_data.get("saldo_cristais", 0))
+            salvar_memoria(current_user_id, {"saldo_cristais": cristais + 50})
+            return jsonify({"sucesso": True, "cristais_creditados": 50, "novo_saldo_cristais": cristais + 50})
+
+        # v1 e v2 — desconto no checkout (cobram coins, registram posse)
+        resultado = gastar_moedas(current_user_id, custo)
+        if not resultado.get("sucesso"):
+            return jsonify({"erro": "Falha ao debitar Coins."}), 400
+        chave = "voucher_impulso_mensal" if voucher_id == "v1" else "voucher_elite_anual"
+        salvar_memoria(current_user_id, {chave: True})
+        return jsonify({"sucesso": True, "voucher": voucher_id})
+
+    except Exception as e:
+        logger.error(f"Erro ao resgatar voucher {voucher_id} para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 
 
 @api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
