@@ -303,6 +303,41 @@ def atualizar_biometria(current_user_id):
         logger.error(f"Erro ao atualizar biometria/auth para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
 
+
+@api_bp.route('/usuario/configurar_onboarding', methods=['POST'])
+@token_required
+def configurar_onboarding(current_user_id):
+    """Salva todos os dados do Onboarding e marca onboarding_completo: true."""
+    try:
+        dados = request.get_json(force=True)
+
+        update_payload = {
+            "onboarding_completo": True,
+        }
+
+        if dados.get("nome"):
+            update_payload["nome"] = str(dados["nome"]).strip()
+        if dados.get("peso_kg") is not None:
+            update_payload["peso_kg"] = float(dados["peso_kg"])
+        if dados.get("altura_cm") is not None:
+            update_payload["altura_cm"] = float(dados["altura_cm"])
+        if dados.get("idade") is not None:
+            update_payload["idade"] = int(dados["idade"])
+        if dados.get("objetivo"):
+            update_payload["objetivo"] = dados["objetivo"]
+        if dados.get("esportes_favoritos"):
+            update_payload["esportes_favoritos"] = dados["esportes_favoritos"]
+        if dados.get("foto_perfil"):
+            update_payload["foto_perfil"] = dados["foto_perfil"]
+
+        sucesso = salvar_memoria(current_user_id, update_payload)
+        logger.info(f"Onboarding concluído para {current_user_id}")
+        return jsonify({"sucesso": sucesso, "onboarding_completo": True})
+    except Exception as e:
+        logger.error(f"Erro ao configurar onboarding para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
 # ===================================================
 # ⚔️ CLÃS E RANKING (SOCIAL)
 # ===================================================
