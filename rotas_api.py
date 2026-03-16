@@ -219,7 +219,16 @@ def get_status_jogador(current_user_id):
         xp_no_nivel = xp_total - xp_anterior
         
         progresso = int((xp_no_nivel / range_nivel) * 100) if range_nivel > 0 else 0
-        
+
+        # Calcula seguro_ativo com segurança (campo pode estar ausente em usuários antigos)
+        seguro_ativo = False
+        try:
+            seguro_val = dados.get("seguro_expira_em", "")
+            if seguro_val:
+                seguro_ativo = datetime.fromisoformat(str(seguro_val)) >= datetime.now()
+        except Exception:
+            seguro_ativo = False
+
         return jsonify({
             # Identidade
             "id":       current_user_id,
@@ -238,14 +247,14 @@ def get_status_jogador(current_user_id):
             "ofensiva_atual":   int(dados.get("ofensiva_atual", 0)),
             "ultima_missao_data": dados.get("ultima_missao_data", ""),
             "seguro_expira_em": dados.get("seguro_expira_em", ""),
-            "seguro_ativo": seguro_ativo,
+            "seguro_ativo":     seguro_ativo,
             # Regra de Ouro: controla o fluxo Login → Onboarding → Home
             "onboarding_completo": dados.get("onboarding_completo", False),
             # Assinatura
             "plano":              plano,
             "status_assinatura":  status_assinatura,
             "vencimento":         vencimento,
-            "ofensiva_quebrada": status_ofensiva.get("quebrada", False)
+            "ofensiva_quebrada":  status_ofensiva.get("quebrada", False)
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
