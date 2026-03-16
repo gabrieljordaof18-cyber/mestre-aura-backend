@@ -254,7 +254,9 @@ def get_status_jogador(current_user_id):
             "plano":              plano,
             "status_assinatura":  status_assinatura,
             "vencimento":         vencimento,
-            "ofensiva_quebrada":  status_ofensiva.get("quebrada", False)
+            "ofensiva_quebrada":  status_ofensiva.get("quebrada", False),
+            # Clãs
+            "cla_atual_id":       dados.get("cla_atual_id", ""),
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
