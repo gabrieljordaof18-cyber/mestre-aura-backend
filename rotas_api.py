@@ -311,25 +311,63 @@ def endpoint_gastar_moedas(current_user_id):
 @api_bp.route('/usuario/atualizar_biometria', methods=['POST'])
 @token_required
 def atualizar_biometria(current_user_id):
-    """Atualiza dados físicos e origem da conta (Apple/Google) para App Store compliance."""
+    """Atualiza dados físicos, nome, foto e origem da conta."""
     try:
         dados = request.get_json(force=True)
-        
-        # [AURA FIX] Payload estendido para incluir metadados de autenticação
-        update_payload = {
-            "peso_kg": float(dados.get("peso", 70)),
-            "altura_cm": float(dados.get("altura", 170)),
-            "idade": int(dados.get("idade", 25)),
-            "objetivo": dados.get("objetivo", "Performance")
-        }
-        
-        # Se vierem dados de provedor_auth (Apple/Google) do Onboarding.jsx
+        update_payload = {}
+
+        # Nome completo
+        if dados.get("nome"):
+            update_payload["nome"] = str(dados["nome"]).strip()
+
+        # Biometria — só atualiza se enviado e não-nulo
+        try:
+            peso = dados.get("peso")
+            if peso is not None and str(peso).strip() not in ("", "null", "None"):
+                update_payload["peso_kg"] = float(peso)
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            altura = dados.get("altura")
+            if altura is not None and str(altura).strip() not in ("", "null", "None"):
+                update_payload["altura_cm"] = float(altura)
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            idade = dados.get("idade")
+            if idade is not None and str(idade).strip() not in ("", "null", "None"):
+                val = int(float(idade))
+                if 1 <= val <= 120:
+                    update_payload["idade"] = val
+        except (TypeError, ValueError):
+            pass
+
+        if dados.get("objetivo"):
+            update_payload["objetivo"] = str(dados["objetivo"])
+
+        # Foto de perfil em Base64 ou URL
+        if dados.get("foto_perfil"):
+            fp = str(dados["foto_perfil"]).strip()
+            if fp:
+                update_payload["foto_perfil"] = fp
+
+        # Remoção de foto
+        if dados.get("remover_foto") is True:
+            update_payload["foto_perfil"] = ""
+
+        # Metadados de autenticação OAuth
         if dados.get("provedor_auth"):
             update_payload["provedor_auth"] = dados.get("provedor_auth")
         if dados.get("email"):
-            update_payload["email"] = dados.get("email")
+            update_payload["email"] = str(dados["email"]).strip().lower()
+
+        if not update_payload:
+            return jsonify({"sucesso": True, "aviso": "Nenhum campo para atualizar"}), 200
 
         sucesso = salvar_memoria(current_user_id, update_payload)
+        logger.info(f"Biometria/Perfil atualizado para {current_user_id}: {list(update_payload.keys())}")
         return jsonify({"sucesso": sucesso})
     except Exception as e:
         logger.error(f"Erro ao atualizar biometria/auth para {current_user_id}: {e}")
