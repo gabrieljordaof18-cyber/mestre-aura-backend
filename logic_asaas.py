@@ -180,21 +180,38 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
             except Exception as mongo_err:
                 logger.error(f"⚠️ Erro ao persistir pedido: {mongo_err}")
 
-        # 5. Formatação de Retorno para o Base44
+        # 5. Formatação de Retorno
         if billing_type == "PIX":
-            qr_response = requests.get(f"{ASAAS_URL}/payments/{payment_id}/pixQrCode", headers=headers)
-            if qr_response.status_code == 200:
-                qr_data = qr_response.json()
-                return {
-                    "sucesso": True,
-                    "id_pagamento": payment_id,
-                    "tipo": "pix",
-                    "payload_pix": qr_data.get('payload'),
-                    "imagem_qr": qr_data.get('encodedImage'),
-                    "vencimento": vencimento,
-                    "total": total_cobranca
-                }
+            # Asaas pode demorar alguns milissegundos para gerar o QR Code.
+            # Tentamos imediatamente e, se falhar, aguardamos 1.5s e tentamos de novo.
+            import time
+            qr_data = {}
+            for tentativa in range(3):
+                qr_response = requests.get(
+                    f"{ASAAS_URL}/payments/{payment_id}/pixQrCode",
+                    headers=headers,
+                    timeout=10
+                )
+                if qr_response.status_code == 200:
+                    qr_data = qr_response.json()
+                    logger.info(f"✅ PIX QR Code gerado na tentativa {tentativa + 1}")
+                    break
+                logger.warning(f"⏳ QR Code tentativa {tentativa + 1} falhou ({qr_response.status_code}). Aguardando...")
+                if tentativa < 2:
+                    time.sleep(1.5)
+            
+            # Retorna SEMPRE como PIX, com ou sem QR Code
+            return {
+                "sucesso": True,
+                "id_pagamento": payment_id,
+                "tipo": "pix",
+                "payload_pix": qr_data.get('payload'),
+                "imagem_qr": qr_data.get('encodedImage'),
+                "vencimento": vencimento,
+                "total": total_cobranca
+            }
         
+        # Cartão: retorna link para a fatura Asaas
         return {
             "sucesso": True,
             "id_pagamento": payment_id,
