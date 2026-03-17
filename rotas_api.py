@@ -1111,10 +1111,13 @@ def listar_pedidos(current_user_id):
         if mongo_db is None:
             return jsonify({"pedidos": []}), 200
         cursor = mongo_db["pedidos"].find(
-            {"user_id": current_user_id},
-            {"_id": 0}
+            {"user_id": current_user_id}
         ).sort("created_at", -1).limit(50)
-        return jsonify({"pedidos": list(cursor)}), 200
+        pedidos = []
+        for p in cursor:
+            p["id"] = str(p.pop("_id"))
+            pedidos.append(p)
+        return jsonify({"pedidos": pedidos}), 200
     except Exception as e:
         logger.error(f"Erro ao listar pedidos de {current_user_id}: {e}")
         return jsonify({"pedidos": []}), 200
