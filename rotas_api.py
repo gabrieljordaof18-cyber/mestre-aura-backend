@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 from flask import request, jsonify, Blueprint
 from bson.objectid import ObjectId
+from pymongo.errors import DuplicateKeyError
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- IMPORTAÇÕES DA NOVA ARQUITETURA ---
@@ -499,6 +500,12 @@ def atualizar_biometria(current_user_id):
         if dados.get("email"):
             update_payload["email"] = str(dados["email"]).strip().lower()
 
+        # Plano (assinatura) — sincronização cliente/RevenueCat; webhook continua sendo fonte de reconciliação
+        if "plano" in dados and dados.get("plano") is not None:
+            p = str(dados["plano"]).strip().lower()
+            if p in ("free", "plus", "pro"):
+                update_payload["plano"] = p
+
         if not update_payload:
             return jsonify({"sucesso": True, "aviso": "Nenhum campo para atualizar"}), 200
 
@@ -507,6 +514,67 @@ def atualizar_biometria(current_user_id):
         return jsonify({"sucesso": sucesso})
     except Exception as e:
         logger.error(f"Erro ao atualizar biometria/auth para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# Crédito de cristais após IAP (RevenueCat). Idempotente por transaction_id (StoreKit).
+CRISTAIS_IAP_POR_PACOTE = {"g1": 100, "g2": 500, "g3": 1500}
+
+
+@api_bp.route('/usuario/iap/cristais', methods=['POST'])
+@token_required
+def iap_creditar_cristais(current_user_id):
+    """
+    Credita cristais após compra confirmada no cliente.
+    transaction_id deve ser o Store transactionIdentifier (único) para evitar duplicidade com webhook/retry.
+    """
+    try:
+        dados = request.get_json(force=True) or {}
+        pacote_id = str(dados.get("pacote_id", "")).strip().lower()
+        transaction_id = str(dados.get("transaction_id", "")).strip()
+
+        if pacote_id not in CRISTAIS_IAP_POR_PACOTE:
+            return jsonify({"erro": "pacote_id inválido"}), 400
+        if not transaction_id:
+            return jsonify({"erro": "transaction_id obrigatório"}), 400
+
+        qtd = CRISTAIS_IAP_POR_PACOTE[pacote_id]
+
+        if mongo_db is not None:
+            try:
+                mongo_db["iap_cristais_transactions"].insert_one({
+                    "_id": transaction_id,
+                    "user_id": current_user_id,
+                    "pacote_id": pacote_id,
+                    "cristais": qtd,
+                    "created_at": datetime.now().isoformat(),
+                })
+            except DuplicateKeyError:
+                mem = carregar_memoria(current_user_id) or {}
+                saldo = int(mem.get("saldo_cristais", 0))
+                return jsonify({
+                    "sucesso": True,
+                    "ja_processado": True,
+                    "cristais_creditados": 0,
+                    "novo_saldo_cristais": saldo,
+                }), 200
+        else:
+            logger.warning("iap/cristais: mongo_db ausente, usando apenas salvar_memoria")
+
+        mem = carregar_memoria(current_user_id) or {}
+        saldo_atual = int(mem.get("saldo_cristais", 0))
+        novo = saldo_atual + qtd
+        salvar_memoria(current_user_id, {"saldo_cristais": novo})
+        logger.info(f"💎 IAP cristais +{qtd} ({pacote_id}) user={current_user_id} tx={transaction_id}")
+
+        return jsonify({
+            "sucesso": True,
+            "cristais_creditados": qtd,
+            "novo_saldo_cristais": novo,
+            "pacote_id": pacote_id,
+        }), 200
+    except Exception as e:
+        logger.error(f"Erro IAP cristais para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
