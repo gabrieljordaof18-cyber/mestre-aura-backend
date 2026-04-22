@@ -70,7 +70,6 @@ def token_required(f):
             return jsonify({"erro": "Token ausente"}), 401
 
         try:
-            # Tenta decodificar como JWT nativo
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             current_user_id = payload.get("user_id")
             if not current_user_id:
@@ -78,9 +77,8 @@ def token_required(f):
         except jwt.ExpiredSignatureError:
             return jsonify({"erro": "Sessão expirada. Faça login novamente."}), 401
         except jwt.InvalidTokenError:
-            # Compatibilidade retroativa: aceita ID direto durante migração do Base44
-            logger.warning("Token não-JWT recebido — usando como ID direto (modo migração).")
-            current_user_id = str(token).strip().replace('"', '').replace("'", "")
+            # Token inválido ou adulterado — rejeita sem fallback
+            return jsonify({"erro": "Token inválido. Faça login novamente."}), 401
 
         return f(current_user_id, *args, **kwargs)
     return decorated
@@ -639,9 +637,11 @@ def configurar_onboarding(current_user_id):
 # ===================================================
 
 @api_bp.route('/cla/ranking', methods=['GET'])
-def get_ranking_cla():
+@token_required
+def get_ranking_cla(current_user_id):
     try:
         ranking = obter_ranking_global(limite=50)
+        # Expõe user_id apenas para usuários autenticados, necessário para o PerfilModal
         return jsonify({"ranking": ranking})
     except Exception as e:
         logger.error(f"Erro ao buscar ranking: {e}")
@@ -1028,12 +1028,22 @@ def feedback(current_user_id):
 # 💳 PAGAMENTOS E WEBHOOKS (ASAAS + REVENUECAT)
 # ===================================================
 
+_RC_WEBHOOK_SECRET = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
+
 @api_bp.route('/webhook/revenuecat', methods=['POST'])
 def webhook_revenuecat():
     """
-    Webhook oficial para o RevenueCat. 
-    Lida com o ciclo de vida das assinaturas Apple/Google.
+    Webhook oficial para o RevenueCat.
+    Verifica o header Authorization se REVENUECAT_WEBHOOK_SECRET estiver definido.
     """
+    # Verificação de assinatura RevenueCat (Bearer token no header Authorization)
+    if _RC_WEBHOOK_SECRET:
+        auth_header = request.headers.get("Authorization", "")
+        provided = auth_header.replace("Bearer ", "").strip()
+        if provided != _RC_WEBHOOK_SECRET:
+            logger.warning("⚠️ Webhook RevenueCat rejeitado: assinatura inválida.")
+            return jsonify({"erro": "Forbidden"}), 403
+
     try:
         dados = request.get_json(force=True)
         evento = dados.get("event", {})
@@ -1525,12 +1535,20 @@ def marcar_notificacoes_lidas(current_user_id):
         return jsonify({"sucesso": False}), 500
 
 
+_ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "")
+
 @api_bp.route('/webhook/asaas', methods=['POST'])
 def webhook_asaas():
     """
     Webhook para receber confirmações de pagamento do Asaas.
-    Rota pública — não usa @token_required (chamada feita pelo servidor Asaas).
+    Verifica o header asaas-access-token se ASAAS_WEBHOOK_TOKEN estiver definido.
     """
+    if _ASAAS_WEBHOOK_TOKEN:
+        provided = request.headers.get("asaas-access-token", "")
+        if provided != _ASAAS_WEBHOOK_TOKEN:
+            logger.warning("⚠️ Webhook Asaas rejeitado: token inválido.")
+            return jsonify({"erro": "Forbidden"}), 403
+
     try:
         dados = request.get_json(force=True)
         evento  = dados.get("event")
