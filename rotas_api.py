@@ -237,6 +237,10 @@ def get_status_jogador(current_user_id):
             "email":    dados.get("email", ""),
             "nome":     nome_atleta,
             "foto":     dados.get("foto_perfil", ""),
+            # Biometria — usada em EditarPerfil e por IA
+            "peso_kg":   dados.get("peso_kg"),
+            "altura_cm": dados.get("altura_cm"),
+            "idade":     dados.get("idade"),
             # Progressão
             "xp_total":         xp_total,
             "moedas":           int(dados.get("moedas", xp_total)),
@@ -244,13 +248,15 @@ def get_status_jogador(current_user_id):
             "nivel":            nivel_atual,
             "barra_progresso":  max(0, min(100, progresso)),
             "xp_falta":         max(0, range_nivel - xp_no_nivel),
-            "objetivo":         dados.get("objetivo", "Performance"),
+            "objetivo":         dados.get("objetivo", "Performance Máxima"),
             "ofensiva_atual":   int(dados.get("ofensiva_atual", 0)),
             "ultima_missao_data": dados.get("ultima_missao_data", ""),
             "seguro_expira_em": dados.get("seguro_expira_em", ""),
             "seguro_ativo":     seguro_ativo,
             # Regra de Ouro: controla o fluxo Login → Onboarding → Home
             "onboarding_completo": dados.get("onboarding_completo", False),
+            # Tour guiado: True = ainda não viu o tutorial inicial
+            "first_access": dados.get("first_access", True),
             # Assinatura
             "plano":              plano,
             "status_assinatura":  status_assinatura,
@@ -267,6 +273,22 @@ def get_status_jogador(current_user_id):
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
         return jsonify({"erro": "Falha ao sincronizar perfil"}), 500
+
+# ===================================================
+# 🎓 TUTORIAL / GUIDED TOUR
+# ===================================================
+
+@api_bp.route('/tutorial/concluir', methods=['POST'])
+@token_required
+def concluir_tutorial(current_user_id):
+    """Marca que o usuário já viu o tutorial inicial. Define first_access = False."""
+    try:
+        salvar_memoria(current_user_id, {"first_access": False})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao concluir tutorial para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 
 # ===================================================
 # 🍎 CONSULTA DE PLANOS (ROBUSTEZ HÍBRIDA)
@@ -1245,6 +1267,263 @@ def rota_cotar_frete(current_user_id):
     except Exception as e:
         logger.error(f"Erro crítico ao cotar frete para {current_user_id}: {e}")
         return jsonify({"erro": "Falha interna no motor de logística."}), 500
+
+# ===================================================
+# 👥 SISTEMA SOCIAL — AMIZADES E NOTIFICAÇÕES
+# ===================================================
+
+def _criar_notificacao(user_id: str, tipo: str, mensagem: str, meta: dict = None):
+    """Insere uma notificação na coleção. Silencia erros para não quebrar o fluxo principal."""
+    try:
+        mongo_db["notificacoes"].insert_one({
+            "user_id":   user_id,
+            "tipo":      tipo,        # "amizade_pedido" | "amizade_aceita" | "sistema" | "mercado"
+            "mensagem":  mensagem,
+            "meta":      meta or {},
+            "lida":      False,
+            "created_at": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Erro ao criar notificação: {e}")
+
+
+@api_bp.route('/social/perfil/<user_id>', methods=['GET'])
+@token_required
+def perfil_publico(current_user_id, user_id):
+    """Retorna o perfil público de outro usuário (para modal de terceiros)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        doc = mongo_db["usuarios"].find_one(
+            {"_id": ObjectId(user_id)},
+            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1,
+             "objetivo": 1, "cla_atual_id": 1, "ofensiva_atual": 1,
+             "esportes_favoritos": 1}
+        )
+        if not doc:
+            return jsonify({"erro": "Usuário não encontrado"}), 404
+
+        # Conta missões concluídas
+        missoes_count = mongo_db["atividades"].count_documents({"user_id": user_id})
+
+        # Nome do clã
+        cla_nome = ""
+        cla_id = doc.get("cla_atual_id", "")
+        if cla_id:
+            try:
+                cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)}, {"nome": 1})
+                cla_nome = cla.get("nome", "") if cla else ""
+            except Exception:
+                pass
+
+        # Verifica status de amizade com o usuário logado
+        amizade = mongo_db["amizades"].find_one({
+            "$or": [
+                {"solicitante_id": current_user_id, "receptor_id": user_id},
+                {"solicitante_id": user_id, "receptor_id": current_user_id}
+            ]
+        })
+        status_amizade = "nenhum"
+        if amizade:
+            status_amizade = amizade.get("status", "nenhum")
+            if status_amizade == "pendente" and amizade.get("solicitante_id") == current_user_id:
+                status_amizade = "pendente_enviado"
+            elif status_amizade == "pendente":
+                status_amizade = "pendente_recebido"
+
+        return jsonify({
+            "user_id":          user_id,
+            "nome":             doc.get("nome", "Anônimo"),
+            "foto":             doc.get("foto_perfil", ""),
+            "nivel":            doc.get("nivel", 1),
+            "xp_total":         doc.get("xp_total", 0),
+            "objetivo":         doc.get("objetivo", ""),
+            "cla_nome":         cla_nome,
+            "ofensiva_atual":   doc.get("ofensiva_atual", 0),
+            "esportes":         doc.get("esportes_favoritos", []),
+            "missoes_total":    missoes_count,
+            "status_amizade":   status_amizade,
+        }), 200
+    except Exception as e:
+        logger.error(f"Erro perfil público {user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/social/amizade/enviar', methods=['POST'])
+@token_required
+def enviar_pedido_amizade(current_user_id):
+    """Envia pedido de amizade a outro usuário."""
+    try:
+        dados = request.get_json(force=True)
+        receptor_id = str(dados.get("receptor_id", "")).strip()
+        if not receptor_id or receptor_id == current_user_id:
+            return jsonify({"erro": "receptor_id inválido"}), 400
+
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        # Verifica se já existe relação
+        existente = mongo_db["amizades"].find_one({
+            "$or": [
+                {"solicitante_id": current_user_id, "receptor_id": receptor_id},
+                {"solicitante_id": receptor_id, "receptor_id": current_user_id}
+            ]
+        })
+        if existente:
+            return jsonify({"erro": "Pedido já existe ou vocês já são amigos"}), 409
+
+        mongo_db["amizades"].insert_one({
+            "solicitante_id": current_user_id,
+            "receptor_id":    receptor_id,
+            "status":         "pendente",
+            "created_at":     datetime.now().isoformat()
+        })
+
+        # Notifica o receptor
+        solicitante = carregar_memoria(current_user_id)
+        nome_sol = solicitante.get("nome", "Alguém")
+        _criar_notificacao(
+            receptor_id,
+            "amizade_pedido",
+            f"{nome_sol} enviou um pedido de amizade para você!",
+            {"solicitante_id": current_user_id, "nome": nome_sol}
+        )
+        return jsonify({"sucesso": True, "mensagem": "Pedido enviado!"}), 201
+    except Exception as e:
+        logger.error(f"Erro ao enviar pedido de amizade: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/social/amizade/responder', methods=['POST'])
+@token_required
+def responder_pedido_amizade(current_user_id):
+    """Aceita ou recusa um pedido de amizade. acao: 'aceitar' | 'recusar'."""
+    try:
+        dados = request.get_json(force=True)
+        solicitante_id = str(dados.get("solicitante_id", "")).strip()
+        acao = str(dados.get("acao", "")).strip()  # "aceitar" | "recusar"
+
+        if not solicitante_id or acao not in ("aceitar", "recusar"):
+            return jsonify({"erro": "Parâmetros inválidos"}), 400
+
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        novo_status = "aceita" if acao == "aceitar" else "recusada"
+        resultado = mongo_db["amizades"].update_one(
+            {"solicitante_id": solicitante_id, "receptor_id": current_user_id, "status": "pendente"},
+            {"$set": {"status": novo_status, "updated_at": datetime.now().isoformat()}}
+        )
+        if resultado.matched_count == 0:
+            return jsonify({"erro": "Pedido não encontrado"}), 404
+
+        if acao == "aceitar":
+            receptor = carregar_memoria(current_user_id)
+            nome_rec = receptor.get("nome", "Alguém")
+            _criar_notificacao(
+                solicitante_id,
+                "amizade_aceita",
+                f"{nome_rec} aceitou seu pedido de amizade!",
+                {"receptor_id": current_user_id, "nome": nome_rec}
+            )
+
+        return jsonify({"sucesso": True, "status": novo_status}), 200
+    except Exception as e:
+        logger.error(f"Erro ao responder pedido de amizade: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/social/amigos', methods=['GET'])
+@token_required
+def listar_amigos(current_user_id):
+    """Retorna a lista de amigos confirmados do usuário logado."""
+    try:
+        if mongo_db is None:
+            return jsonify({"amigos": []}), 200
+
+        relacoes = list(mongo_db["amizades"].find({
+            "$or": [
+                {"solicitante_id": current_user_id, "status": "aceita"},
+                {"receptor_id": current_user_id, "status": "aceita"}
+            ]
+        }))
+
+        amigos = []
+        for rel in relacoes:
+            amigo_id = rel["receptor_id"] if rel["solicitante_id"] == current_user_id else rel["solicitante_id"]
+            try:
+                doc = mongo_db["usuarios"].find_one(
+                    {"_id": ObjectId(amigo_id)},
+                    {"nome": 1, "foto_perfil": 1, "nivel": 1, "xp_total": 1, "objetivo": 1, "ofensiva_atual": 1}
+                )
+                if doc:
+                    amigos.append({
+                        "user_id":       amigo_id,
+                        "nome":          doc.get("nome", "Anônimo"),
+                        "foto":          doc.get("foto_perfil", ""),
+                        "nivel":         doc.get("nivel", 1),
+                        "xp_total":      doc.get("xp_total", 0),
+                        "objetivo":      doc.get("objetivo", ""),
+                        "ofensiva_atual": doc.get("ofensiva_atual", 0),
+                        "amizade_desde": rel.get("updated_at", rel.get("created_at", "")),
+                    })
+            except Exception:
+                pass
+
+        amigos.sort(key=lambda a: a["xp_total"], reverse=True)
+        return jsonify({"amigos": amigos}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar amigos de {current_user_id}: {e}")
+        return jsonify({"amigos": []}), 200
+
+
+@api_bp.route('/social/notificacoes', methods=['GET'])
+@token_required
+def listar_notificacoes(current_user_id):
+    """Retorna as últimas 30 notificações do usuário, ordenadas por data desc."""
+    try:
+        if mongo_db is None:
+            return jsonify({"notificacoes": [], "nao_lidas": 0}), 200
+
+        cursor = mongo_db["notificacoes"].find(
+            {"user_id": current_user_id}
+        ).sort("created_at", -1).limit(30)
+
+        notifs = []
+        for n in cursor:
+            notifs.append({
+                "id":        str(n["_id"]),
+                "tipo":      n.get("tipo", "sistema"),
+                "mensagem":  n.get("mensagem", ""),
+                "meta":      n.get("meta", {}),
+                "lida":      n.get("lida", False),
+                "created_at": n.get("created_at", ""),
+            })
+
+        nao_lidas = sum(1 for n in notifs if not n["lida"])
+        return jsonify({"notificacoes": notifs, "nao_lidas": nao_lidas}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar notificações de {current_user_id}: {e}")
+        return jsonify({"notificacoes": [], "nao_lidas": 0}), 200
+
+
+@api_bp.route('/social/notificacoes/ler', methods=['POST'])
+@token_required
+def marcar_notificacoes_lidas(current_user_id):
+    """Marca todas as notificações do usuário como lidas."""
+    try:
+        if mongo_db is None:
+            return jsonify({"sucesso": True}), 200
+        mongo_db["notificacoes"].update_many(
+            {"user_id": current_user_id, "lida": False},
+            {"$set": {"lida": True}}
+        )
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao marcar notificações lidas: {e}")
+        return jsonify({"sucesso": False}), 500
+
 
 @api_bp.route('/webhook/asaas', methods=['POST'])
 def webhook_asaas():

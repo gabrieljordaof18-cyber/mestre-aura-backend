@@ -194,18 +194,20 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
 def obter_ranking_global(limite=50):
     if mongo_db is None: return []
     try:
-        # [AURA FIX] Busca baseada em xp_total, refletindo o saldo oficial de moedas (1:1)
         cursor = mongo_db["usuarios"].find(
             {"plano": {"$ne": "banned"}},
-            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "_id": 0}
+            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "objetivo": 1, "cla_atual_id": 1}
         ).sort("xp_total", DESCENDING).limit(limite)
         
         return [{
-            "posicao": i + 1,
-            "nome": doc.get("nome", "Anônimo"),
-            "foto": doc.get("foto_perfil", ""),
+            "posicao":  i + 1,
+            "user_id":  str(doc["_id"]),
+            "nome":     doc.get("nome", "Anônimo"),
+            "foto":     doc.get("foto_perfil", ""),
             "xp_total": doc.get("xp_total", 0),
-            "nivel": doc.get("nivel", 1),
+            "nivel":    doc.get("nivel", 1),
+            "objetivo": doc.get("objetivo", ""),
+            "cla_atual_id": doc.get("cla_atual_id", ""),
             "titulo": "Atleta Elite"
         } for i, doc in enumerate(cursor)]
     except Exception as e:
