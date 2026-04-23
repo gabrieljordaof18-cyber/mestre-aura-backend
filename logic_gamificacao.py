@@ -85,11 +85,11 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     # [AURA SYNC] Fallback com títulos imersivos (Substituindo o genérico 'Desafio Aura')
     if not pool_missoes:
         pool_missoes = [
-            {"id": "m_h2o", "titulo": "Caminho da Água", "descricao": "Ingerir 3.5L de água hoje", "xp": 100, "categoria": "saude", "icone": "Zap"},
-            {"id": "m_hybrid", "titulo": "Protocolo Híbrido", "descricao": "Musculação + 15min de Cardio", "xp": 150, "categoria": "treino", "icone": "Flame"},
-            {"id": "m_mov", "titulo": "Nômade Moderno", "descricao": "Bater a meta de 10.000 passos", "xp": 100, "categoria": "treino", "icone": "Activity"},
-            {"id": "m_sono", "titulo": "Mestre do Descanso", "descricao": "Garantir 8h de sono profundo", "xp": 120, "categoria": "descanso", "icone": "Moon"},
-            {"id": "m_foco", "titulo": "Mente Blindada", "descricao": "Completar 10min de Meditação", "xp": 80, "categoria": "mente", "icone": "Brain"}
+            {"id": "m_h2o",    "titulo": "Caminho da Água",    "descricao": "Ingerir 3.5L de água hoje",        "xp": 100, "categoria": "saude",   "icone": "Zap"},
+            {"id": "m_hybrid", "titulo": "Protocolo Híbrido",  "descricao": "Musculação + 15min de Cardio",     "xp": 150, "categoria": "treino",  "icone": "Flame"},
+            {"id": "m_mov",    "titulo": "Nômade Moderno",     "descricao": "Bater a meta de 10.000 passos",    "xp": 100, "categoria": "treino",  "icone": "Activity"},
+            {"id": "m_sono",   "titulo": "Mestre do Descanso", "descricao": "Garantir 8h de sono profundo",     "xp": 120, "categoria": "descanso","icone": "Moon",  "meta_duracao_min": 480},
+            {"id": "m_foco",   "titulo": "Mente Blindada",     "descricao": "Completar 10min de Meditação",     "xp": 80,  "categoria": "mente",   "icone": "Brain", "meta_duracao_min": 10},
         ]
 
     try:
@@ -100,10 +100,8 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
 
     missoes_ativas = []
     for m in selecionadas:
-        # [AURA SYNC] Prioridade absoluta para o Título Específico para evitar duplicidade visual no front
         titulo_final = m.get("titulo") or "Missão Diária"
-
-        missoes_ativas.append({
+        missao = {
             "id": m.get("id"),
             "titulo": titulo_final,
             "descricao": m.get("descricao", "Complete o desafio para evoluir"),
@@ -111,8 +109,13 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
             "categoria": m.get("categoria", "geral"),
             "icone": m.get("icone", "Target"),
             "concluida": False,
-            "data_geracao": hoje_str
-        })
+            "progresso_pct": 0,
+            "data_geracao": hoje_str,
+        }
+        # Missions with duration targets track partial completion
+        if m.get("meta_duracao_min"):
+            missao["meta_duracao_min"] = int(m["meta_duracao_min"])
+        missoes_ativas.append(missao)
 
     # Atualiza a memória local antes de salvar no Atlas
     if "gamificacao" not in memoria: 

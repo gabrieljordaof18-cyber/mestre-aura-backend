@@ -934,11 +934,14 @@ def concluir_missao(current_user_id):
         dados = request.get_json(force=True)
         missao_id = dados.get("id")
         missao_tipo = str(dados.get("tipo", "")).strip().lower()
-        
+        # duracao_min: duração da atividade registrada em minutos (para metas parciais)
+        duracao_min_raw = dados.get("duracao_min")
+        duracao_min = int(float(duracao_min_raw)) if duracao_min_raw is not None else None
+
         memoria = carregar_memoria(current_user_id)
         gamificacao = memoria.get("gamificacao", {})
         missoes = gamificacao.get("missoes_ativas", [])
-        
+
         for m in missoes:
             id_match = missao_id and m.get("id") == missao_id
             tipo_match = missao_tipo and (
@@ -946,24 +949,52 @@ def concluir_missao(current_user_id):
                 or str(m.get("tipo", "")).strip().lower() == missao_tipo
                 or str(m.get("titulo", "")).strip().lower() == missao_tipo
             )
-            if (id_match or tipo_match) and not m.get("concluida"):
-                m["concluida"] = True
-                salvar_memoria(current_user_id, memoria)
-                
-                resultado = aplicar_xp(current_user_id, m.get("xp", 0))
-                dados_ofensiva = registrar_conclusao_missao(current_user_id)
-                return jsonify({
-                    "sucesso": True, 
-                    "xp_ganho": m.get("xp", 0),
-                    "novo_nivel": resultado["novo_nivel"],
-                    "novo_xp": resultado["novo_xp"],
-                    "cristais_ganhos": resultado.get("cristais_ganhos", 0),
-                    "ofensiva_atual": dados_ofensiva.get("ofensiva_atual", 0),
-                    "seguro_expira_em": dados_ofensiva.get("seguro_expira_em", "")
-                })
-                
+            if not (id_match or tipo_match) or m.get("concluida"):
+                continue
+
+            meta_min = m.get("meta_duracao_min")
+
+            # Missão com meta de duração — verifica progresso parcial
+            if meta_min and duracao_min is not None:
+                progresso_pct = min(100, int((duracao_min / meta_min) * 100))
+                m["progresso_pct"] = progresso_pct
+
+                if progresso_pct < 100:
+                    # Progresso parcial: salva estado mas não concede recompensa
+                    salvar_memoria(current_user_id, memoria)
+                    falta_min = meta_min - duracao_min
+                    falta_h = falta_min // 60
+                    falta_m = falta_min % 60
+                    falta_texto = f"{falta_h}h{falta_m:02d}min" if falta_h > 0 else f"{falta_m}min"
+                    return jsonify({
+                        "sucesso": False,
+                        "parcial": True,
+                        "progresso_pct": progresso_pct,
+                        "falta_min": falta_min,
+                        "falta_texto": falta_texto,
+                        "mensagem": f"Progresso: {progresso_pct}% — faltam {falta_texto} para a meta"
+                    })
+
+            # Missão 100% completa — concede recompensa integral
+            m["concluida"] = True
+            m["progresso_pct"] = 100
+            salvar_memoria(current_user_id, memoria)
+
+            resultado = aplicar_xp(current_user_id, m.get("xp", 0))
+            dados_ofensiva = registrar_conclusao_missao(current_user_id)
+            return jsonify({
+                "sucesso": True,
+                "xp_ganho": m.get("xp", 0),
+                "novo_nivel": resultado["novo_nivel"],
+                "novo_xp": resultado["novo_xp"],
+                "cristais_ganhos": resultado.get("cristais_ganhos", 0),
+                "ofensiva_atual": dados_ofensiva.get("ofensiva_atual", 0),
+                "seguro_expira_em": dados_ofensiva.get("seguro_expira_em", "")
+            })
+
         return jsonify({"erro": "Missão inválida ou já concluída"}), 400
     except Exception as e:
+        logger.error(f"Erro concluir_missao: {e}")
         return jsonify({"erro": "Falha ao concluir missão"}), 500
 
 
