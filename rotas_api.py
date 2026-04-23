@@ -1535,6 +1535,385 @@ def marcar_notificacoes_lidas(current_user_id):
         return jsonify({"sucesso": False}), 500
 
 
+# ===================================================
+# 🪪 AURA CODE — Identificador único público (8 chars)
+# ===================================================
+
+def _gerar_aura_code(user_id: str) -> str:
+    """Deriva um código de 8 dígitos alfanuméricos do ObjectId. Determinístico e sem colisões."""
+    import hashlib
+    h = hashlib.sha256(str(user_id).encode()).hexdigest()
+    return h[:8].upper()
+
+
+@api_bp.route('/social/meu_codigo', methods=['GET'])
+@token_required
+def meu_aura_code(current_user_id):
+    """Retorna (e cria se necessário) o Aura Code do usuário logado."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+        doc = mongo_db["usuarios"].find_one({"_id": ObjectId(current_user_id)}, {"aura_code": 1})
+        code = doc.get("aura_code") if doc else None
+        if not code:
+            code = _gerar_aura_code(current_user_id)
+            mongo_db["usuarios"].update_one(
+                {"_id": ObjectId(current_user_id)},
+                {"$set": {"aura_code": code}}
+            )
+        return jsonify({"aura_code": code}), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar Aura Code: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/social/buscar_por_codigo', methods=['GET'])
+@token_required
+def buscar_por_aura_code(current_user_id):
+    """Busca um usuário pelo Aura Code (query param: code=XXXXXXXX)."""
+    try:
+        code = request.args.get("code", "").strip().upper()
+        if len(code) != 8:
+            return jsonify({"erro": "Código deve ter 8 caracteres"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        # Migra usuários antigos que ainda não têm aura_code
+        doc = mongo_db["usuarios"].find_one({"aura_code": code},
+            {"nome": 1, "foto_perfil": 1, "nivel": 1, "xp_total": 1, "objetivo": 1})
+        if not doc:
+            return jsonify({"erro": "Código não encontrado"}), 404
+
+        uid = str(doc["_id"])
+        if uid == current_user_id:
+            return jsonify({"erro": "Esse é o seu próprio código!"}), 400
+
+        # Verifica status de amizade
+        amizade = mongo_db["amizades"].find_one({
+            "$or": [
+                {"solicitante_id": current_user_id, "receptor_id": uid},
+                {"solicitante_id": uid, "receptor_id": current_user_id}
+            ]
+        })
+        status_amizade = "nenhum"
+        if amizade:
+            status_amizade = amizade.get("status", "nenhum")
+            if status_amizade == "pendente" and amizade.get("solicitante_id") == current_user_id:
+                status_amizade = "pendente_enviado"
+            elif status_amizade == "pendente":
+                status_amizade = "pendente_recebido"
+
+        return jsonify({
+            "user_id":        uid,
+            "nome":           doc.get("nome", "Anônimo"),
+            "foto":           doc.get("foto_perfil", ""),
+            "nivel":          doc.get("nivel", 1),
+            "xp_total":       doc.get("xp_total", 0),
+            "objetivo":       doc.get("objetivo", ""),
+            "aura_code":      code,
+            "status_amizade": status_amizade,
+        }), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar por código: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# ===================================================
+# ⚔️  DESAFIOS DE CLÃ
+# ===================================================
+
+@api_bp.route('/cla/desafio', methods=['POST'])
+@token_required
+def criar_desafio_cla(current_user_id):
+    """Cria um desafio no clã. Apenas owner/co-leader. Limite: 1 desafio ativo por vez."""
+    try:
+        dados = request.get_json(force=True)
+        cla_id = str(dados.get("cla_id", "")).strip()
+        titulo = str(dados.get("titulo", "")).strip()
+        duracao_dias = max(1, int(dados.get("duracao_dias", 7)))
+        descricao = str(dados.get("descricao", "")).strip()
+
+        if not cla_id or not titulo:
+            return jsonify({"erro": "cla_id e titulo são obrigatórios"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        # Verifica cargo
+        cargo = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == current_user_id), None)
+        if cargo not in ("owner", "co-leader"):
+            return jsonify({"erro": "Apenas líderes podem criar desafios"}), 403
+
+        # Verifica se já há desafio ativo
+        agora = datetime.now().isoformat()
+        ativo = mongo_db["desafios_cla"].find_one({"cla_id": cla_id, "ativo": True, "expira_em": {"$gt": agora}})
+        if ativo:
+            return jsonify({"erro": "Já existe um desafio ativo. Aguarde ele expirar."}), 409
+
+        expira = (datetime.now() + timedelta(days=duracao_dias)).isoformat()
+        doc = {
+            "cla_id":       cla_id,
+            "titulo":       titulo,
+            "descricao":    descricao,
+            "criador_id":   current_user_id,
+            "duracao_dias": duracao_dias,
+            "expira_em":    expira,
+            "ativo":        True,
+            "created_at":   agora,
+        }
+        res = mongo_db["desafios_cla"].insert_one(doc)
+        doc["id"] = str(res.inserted_id)
+        doc.pop("_id", None)
+        return jsonify(doc), 201
+    except Exception as e:
+        logger.error(f"Erro ao criar desafio: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/desafio_ativo', methods=['GET'])
+@token_required
+def get_desafio_ativo(current_user_id, cla_id):
+    """Retorna o desafio ativo do clã (se existir)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"desafio": None}), 200
+        agora = datetime.now().isoformat()
+        doc = mongo_db["desafios_cla"].find_one(
+            {"cla_id": cla_id, "ativo": True, "expira_em": {"$gt": agora}},
+            sort=[("created_at", -1)]
+        )
+        if not doc:
+            return jsonify({"desafio": None}), 200
+        doc["id"] = str(doc.pop("_id"))
+        return jsonify({"desafio": doc}), 200
+    except Exception as e:
+        logger.error(f"Erro ao buscar desafio: {e}")
+        return jsonify({"desafio": None}), 200
+
+
+@api_bp.route('/cla/desafio/evidencia', methods=['POST'])
+@token_required
+def enviar_evidencia_desafio(current_user_id):
+    """Membro envia foto-evidência (URL base64 ou link) para um desafio."""
+    try:
+        dados = request.get_json(force=True)
+        desafio_id = str(dados.get("desafio_id", "")).strip()
+        foto_url   = str(dados.get("foto_url", "")).strip()  # URL ou base64
+        legenda    = str(dados.get("legenda", "")).strip()[:200]
+
+        if not desafio_id or not foto_url:
+            return jsonify({"erro": "desafio_id e foto_url são obrigatórios"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        # Valida que o desafio existe e está ativo
+        try:
+            desafio = mongo_db["desafios_cla"].find_one({"_id": ObjectId(desafio_id)})
+        except Exception:
+            return jsonify({"erro": "desafio_id inválido"}), 400
+        if not desafio or not desafio.get("ativo"):
+            return jsonify({"erro": "Desafio não encontrado ou expirado"}), 404
+
+        # Busca nome do usuário
+        user_doc = mongo_db["usuarios"].find_one({"_id": ObjectId(current_user_id)}, {"nome": 1, "foto_perfil": 1})
+        user_nome = user_doc.get("nome", "Membro") if user_doc else "Membro"
+
+        agora = datetime.now().isoformat()
+        ev = {
+            "desafio_id": desafio_id,
+            "cla_id":     desafio.get("cla_id"),
+            "user_id":    current_user_id,
+            "user_nome":  user_nome,
+            "foto_url":   foto_url,
+            "legenda":    legenda,
+            "created_at": agora,
+        }
+        res = mongo_db["evidencias_desafio"].insert_one(ev)
+        ev["id"] = str(res.inserted_id)
+        ev.pop("_id", None)
+        return jsonify(ev), 201
+    except Exception as e:
+        logger.error(f"Erro ao enviar evidência: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/desafio/<desafio_id>/evidencias', methods=['GET'])
+@token_required
+def listar_evidencias(current_user_id, desafio_id):
+    """Retorna as evidências de um desafio (feed social)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"evidencias": []}), 200
+        cursor = mongo_db["evidencias_desafio"].find(
+            {"desafio_id": desafio_id}
+        ).sort("created_at", -1).limit(50)
+        evs = []
+        for e in cursor:
+            e["id"] = str(e.pop("_id"))
+            evs.append(e)
+        return jsonify({"evidencias": evs}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar evidências: {e}")
+        return jsonify({"evidencias": []}), 200
+
+
+# ===================================================
+# 🏰 GESTÃO DE CLÃ — Editar, Promover, Expulsar
+# ===================================================
+
+@api_bp.route('/cla/<cla_id>/editar', methods=['POST'])
+@token_required
+def editar_cla(current_user_id, cla_id):
+    """Edita nome, descrição, cor, emblema e visibilidade do clã (somente owner)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        cargo = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == current_user_id), None)
+        if cargo != "owner":
+            return jsonify({"erro": "Apenas o líder pode editar o clã"}), 403
+
+        dados = request.get_json(force=True)
+        update = {"updated_at": datetime.now().isoformat()}
+        for campo in ("nome", "descricao", "cor", "emblema"):
+            if campo in dados and str(dados[campo]).strip():
+                update[campo] = str(dados[campo]).strip()
+        if "privado" in dados:
+            update["privado"] = bool(dados["privado"])
+
+        mongo_db["Clas"].update_one({"_id": ObjectId(cla_id)}, {"$set": update})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao editar clã {cla_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/promover', methods=['POST'])
+@token_required
+def promover_membro(current_user_id, cla_id):
+    """Promove um membro a co-leader (somente owner)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        dados = request.get_json(force=True)
+        alvo_id = str(dados.get("user_id", "")).strip()
+        if not alvo_id:
+            return jsonify({"erro": "user_id do alvo é obrigatório"}), 400
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        cargo_solicitante = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == current_user_id), None)
+        if cargo_solicitante != "owner":
+            return jsonify({"erro": "Apenas o líder pode promover membros"}), 403
+
+        resultado = mongo_db["Clas"].update_one(
+            {"_id": ObjectId(cla_id), "membros.user_id": alvo_id},
+            {"$set": {"membros.$.cargo": "co-leader", "updated_at": datetime.now().isoformat()}}
+        )
+        if resultado.matched_count == 0:
+            return jsonify({"erro": "Membro não encontrado no clã"}), 404
+
+        # Notifica o promovido
+        alvo_doc = mongo_db["usuarios"].find_one({"_id": ObjectId(alvo_id)}, {"nome": 1}) if alvo_id else None
+        _criar_notificacao(alvo_id, "sistema",
+            f"Você foi promovido a Co-Líder no clã {cla.get('nome', '')}!",
+            {"cla_id": cla_id})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao promover membro: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/expulsar', methods=['POST'])
+@token_required
+def expulsar_membro(current_user_id, cla_id):
+    """Expulsa um membro do clã (owner pode expulsar qualquer um; co-leader pode expulsar member)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        dados = request.get_json(force=True)
+        alvo_id = str(dados.get("user_id", "")).strip()
+        if not alvo_id or alvo_id == current_user_id:
+            return jsonify({"erro": "user_id do alvo inválido"}), 400
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        cargo_sol = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == current_user_id), None)
+        cargo_alvo = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == alvo_id), None)
+
+        if cargo_sol not in ("owner", "co-leader"):
+            return jsonify({"erro": "Sem permissão para expulsar"}), 403
+        if cargo_sol == "co-leader" and cargo_alvo in ("owner", "co-leader"):
+            return jsonify({"erro": "Co-líderes só podem expulsar membros comuns"}), 403
+        if cargo_alvo == "owner":
+            return jsonify({"erro": "O líder não pode ser expulso"}), 403
+
+        mongo_db["Clas"].update_one(
+            {"_id": ObjectId(cla_id)},
+            {"$pull": {"membros": {"user_id": alvo_id}},
+             "$set":  {"updated_at": datetime.now().isoformat()}}
+        )
+        # Remove vínculo do usuário expulso
+        salvar_memoria(alvo_id, {"cla_atual_id": None})
+        _criar_notificacao(alvo_id, "sistema",
+            f"Você foi removido do clã {cla.get('nome', '')}.",
+            {"cla_id": cla_id})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao expulsar membro: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# ===================================================
+# 🤝 AMIZADE — Aceitar/Recusar via notificação (já existe responder, mantido)
+# ===================================================
+
+@api_bp.route('/social/pendentes', methods=['GET'])
+@token_required
+def pedidos_pendentes(current_user_id):
+    """Lista pedidos de amizade recebidos e ainda pendentes."""
+    try:
+        if mongo_db is None:
+            return jsonify({"pedidos": []}), 200
+        cursor = list(mongo_db["amizades"].find(
+            {"receptor_id": current_user_id, "status": "pendente"}
+        ))
+        pedidos = []
+        for rel in cursor:
+            uid = rel["solicitante_id"]
+            try:
+                doc = mongo_db["usuarios"].find_one({"_id": ObjectId(uid)},
+                    {"nome": 1, "foto_perfil": 1, "nivel": 1, "objetivo": 1})
+                if doc:
+                    pedidos.append({
+                        "user_id": uid,
+                        "nome":    doc.get("nome", "Anônimo"),
+                        "foto":    doc.get("foto_perfil", ""),
+                        "nivel":   doc.get("nivel", 1),
+                        "objetivo": doc.get("objetivo", ""),
+                        "created_at": rel.get("created_at", ""),
+                    })
+            except Exception:
+                pass
+        return jsonify({"pedidos": pedidos}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar pedidos pendentes: {e}")
+        return jsonify({"pedidos": []}), 200
+
+
 _ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "")
 
 @api_bp.route('/webhook/asaas', methods=['POST'])
