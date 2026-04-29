@@ -984,10 +984,13 @@ def concluir_missao(current_user_id):
             dados_ofensiva = registrar_conclusao_missao(current_user_id)
             return jsonify({
                 "sucesso": True,
-                "xp_ganho": m.get("xp", 0),
-                "novo_nivel": resultado["novo_nivel"],
-                "novo_xp": resultado["novo_xp"],
-                "cristais_ganhos": resultado.get("cristais_ganhos", 0),
+                "xp_ganho":       m.get("xp", 0),
+                "novo_nivel":     resultado["novo_nivel"],
+                "novo_xp":        resultado["novo_xp"],
+                "moedas_ganhas":  resultado.get("moedas_ganhas", 0),
+                "cristais_ganhos":resultado.get("cristais_ganhos", 0),
+                "subiu":          resultado.get("subiu", False),
+                "bonus_level_up": resultado.get("bonus_level_up"),
                 "ofensiva_atual": dados_ofensiva.get("ofensiva_atual", 0),
                 "seguro_expira_em": dados_ofensiva.get("seguro_expira_em", "")
             })
@@ -1789,6 +1792,119 @@ def listar_evidencias(current_user_id, desafio_id):
     except Exception as e:
         logger.error(f"Erro ao listar evidências: {e}")
         return jsonify({"evidencias": []}), 200
+
+
+@api_bp.route('/cla/desafio/<desafio_id>/ranking', methods=['GET'])
+@token_required
+def ranking_desafio(current_user_id, desafio_id):
+    """
+    Ranking dinâmico do desafio: ordena membros pela quantidade de evidências
+    enviadas dentro do período do desafio ativo. Prova social pura.
+    """
+    try:
+        if mongo_db is None:
+            return jsonify({"ranking": [], "desafio_titulo": ""}), 200
+
+        try:
+            desafio = mongo_db["desafios_cla"].find_one({"_id": ObjectId(desafio_id)})
+        except Exception:
+            return jsonify({"erro": "ID de desafio inválido"}), 400
+
+        if not desafio:
+            return jsonify({"erro": "Desafio não encontrado"}), 404
+
+        # Agrega evidências por membro dentro do período do desafio
+        pipeline = [
+            {"$match": {"desafio_id": desafio_id}},
+            {"$group": {
+                "_id":              "$user_id",
+                "total_envios":     {"$sum": 1},
+                "user_nome":        {"$first": "$user_nome"},
+                "ultima_evidencia": {"$max": "$created_at"},
+            }},
+            {"$sort": {"total_envios": -1}},
+            {"$limit": 50},
+        ]
+
+        cursor = mongo_db["evidencias_desafio"].aggregate(pipeline)
+        ranking = []
+        for i, doc in enumerate(cursor):
+            uid  = doc["_id"]
+            foto = ""
+            nivel = 1
+            try:
+                u = mongo_db["usuarios"].find_one(
+                    {"_id": ObjectId(uid)},
+                    {"foto_perfil": 1, "nivel": 1}
+                )
+                if u:
+                    fp = u.get("foto_perfil", "")
+                    foto  = fp if fp and not fp.startswith("data:") else ""
+                    nivel = u.get("nivel", 1)
+            except Exception:
+                pass
+
+            ranking.append({
+                "posicao":          i + 1,
+                "user_id":          uid,
+                "nome":             doc.get("user_nome", "Atleta"),
+                "foto":             foto,
+                "nivel":            nivel,
+                "total_envios":     doc["total_envios"],
+                "ultima_evidencia": doc.get("ultima_evidencia", ""),
+            })
+
+        return jsonify({
+            "ranking":        ranking,
+            "desafio_titulo": desafio.get("titulo", "Desafio"),
+            "total_membros":  len(ranking),
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Erro ao buscar ranking do desafio {desafio_id}: {e}")
+        return jsonify({"ranking": [], "desafio_titulo": ""}), 200
+
+
+@api_bp.route('/cla/desafio/<desafio_id>/excluir', methods=['DELETE'])
+@token_required
+def excluir_desafio_cla(current_user_id, desafio_id):
+    """Exclui/cancela o desafio ativo. Apenas owner ou co-leader do clã."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        try:
+            oid = ObjectId(desafio_id)
+        except Exception:
+            return jsonify({"erro": "ID de desafio inválido"}), 400
+
+        desafio = mongo_db["desafios_cla"].find_one({"_id": oid})
+        if not desafio:
+            return jsonify({"erro": "Desafio não encontrado"}), 404
+
+        cla_id = desafio.get("cla_id", "")
+        try:
+            cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)})
+        except Exception:
+            cla = None
+
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        cargo = next((m.get("cargo") for m in cla.get("membros", []) if m.get("user_id") == current_user_id), None)
+        if cargo not in ("owner", "co_leader"):
+            return jsonify({"erro": "Apenas líderes e co-líderes podem excluir desafios"}), 403
+
+        mongo_db["desafios_cla"].delete_one({"_id": oid})
+        # Remove também as evidências associadas
+        mongo_db["evidencias_desafio"].delete_many({"desafio_id": desafio_id})
+
+        logger.info(f"🗑️ Desafio {desafio_id} excluído por {current_user_id}")
+        return jsonify({"sucesso": True, "mensagem": "Desafio excluído com sucesso"}), 200
+
+    except Exception as e:
+        logger.error(f"Erro ao excluir desafio: {e}")
+        return jsonify({"erro": "Falha ao excluir desafio"}), 500
 
 
 # ===================================================

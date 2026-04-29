@@ -156,19 +156,23 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     cristais_atuais += ganho_cristais
 
     subiu_nivel = False
+    bonus_level_up_moedas   = 0
     bonus_level_up_cristais = 0
     
-    # [AURA FIX] Lógica de Progressão Estável
+    # [AURA GAMIFICAÇÃO] Progressão com bônus escalonados por nível
     seguranca_loop = 0
     while xp_atual >= (XP_BASE_NIVEL * nivel_atual) and seguranca_loop < 10:
         xp_atual -= (XP_BASE_NIVEL * nivel_atual)
         nivel_atual += 1
-        bonus_level_up_cristais += CRISTAIS_POR_LEVEL_UP
+        # Bônus anti-inflação: cresce com o nível, incentiva progressão contínua
+        bonus_level_up_moedas   += nivel_atual * 10   # Ex: Nível 5 → +50 moedas
+        bonus_level_up_cristais += CRISTAIS_POR_LEVEL_UP + (nivel_atual * 2)  # Ex: Nível 5 → +35 cristais
         subiu_nivel = True
         seguranca_loop += 1
-        logger.info(f"🆙 [LEVEL UP] {user_id} subiu para Nível {nivel_atual}")
+        logger.info(f"🆙 [LEVEL UP] {user_id} subiu para Nível {nivel_atual} (+{nivel_atual*10} moedas, +{CRISTAIS_POR_LEVEL_UP + nivel_atual*2} cristais)")
 
-    # Atualiza o saldo final com bônus de nível
+    # Aplica os bônus de Level Up ao saldo
+    moedas_atuais   += bonus_level_up_moedas
     cristais_atuais += bonus_level_up_cristais
 
     # Persistência garantida na raiz do documento
@@ -187,11 +191,16 @@ def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
     salvar_memoria(user_id, memoria)
     
     return {
-        "novo_xp": xp_atual, 
-        "novo_nivel": nivel_atual, 
-        "moedas_ganhas": ganho_moedas,
+        "novo_xp":      xp_atual,
+        "novo_nivel":   nivel_atual,
+        "moedas_ganhas":   ganho_moedas + bonus_level_up_moedas,
         "cristais_ganhos": ganho_cristais + bonus_level_up_cristais,
-        "subiu": subiu_nivel
+        "subiu": subiu_nivel,
+        # Detalhes do bônus para o modal de celebração no frontend
+        "bonus_level_up": {
+            "moedas":   bonus_level_up_moedas,
+            "cristais": bonus_level_up_cristais,
+        } if subiu_nivel else None,
     }
 
 

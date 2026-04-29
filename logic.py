@@ -24,9 +24,11 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 if api_key:
     try:
-        # [AURA FIX] Inicialização robusta do cliente OpenAI
-        client = OpenAI(api_key=api_key)
-        logger.info("✅ Mestre da Aura inicializado via OpenAI com sucesso.")
+        # timeout=60s evita o erro de 'Mestre Meditando' por timeout do Render (30s padrão)
+        # O Render tem limite de 30s de resposta HTTP; a OpenAI responde em até ~45s em prompts
+        # densos — aumentamos o timeout do cliente para evitar que o SDK cancele antes.
+        client = OpenAI(api_key=api_key, timeout=60.0)
+        logger.info("✅ Mestre da Aura inicializado via OpenAI (timeout=60s).")
     except Exception as e:
         logger.error(f"⚠️ Falha crítica ao iniciar Mestre da Aura: {e}")
 else:
@@ -156,8 +158,8 @@ def processar_comando(user_id: str, mensagem: str) -> str:
         )
     }
 
-    # 3. Histórico e Mensagem Atual
-    historico = _buscar_historico(user_id, limite=6)
+    # 3. Histórico e Mensagem Atual (limitado a 5 pares para evitar contexto saturado)
+    historico = _buscar_historico(user_id, limite=5)
     mensagens = [prompt_sistema] + historico + [{"role": "user", "content": mensagem}]
 
     # 4. Execução OpenAI
@@ -181,8 +183,16 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             texto_resposta = msg_ia.content.strip()
 
     except Exception as e:
+        err_str = str(e).lower()
         logger.error(f"Erro OpenAI para o user {user_id}: {e}")
-        texto_resposta = "⚠️ O Mestre teve uma interrupção na conexão neural. Tente novamente."
+        if "timeout" in err_str or "timed out" in err_str or "read timeout" in err_str:
+            texto_resposta = (
+                "⏳ O Mestre levou mais tempo do que o esperado para processar seu protocolo — "
+                "possivelmente por um prompt muito denso. Tente uma pergunta mais direta ou "
+                "aguarde alguns instantes e tente novamente."
+            )
+        else:
+            texto_resposta = "⚠️ O Mestre teve uma interrupção na conexão neural. Tente novamente."
 
     # 5. Salva Interação
     _salvar_chat(user_id, "user", mensagem)

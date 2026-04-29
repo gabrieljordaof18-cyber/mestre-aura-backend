@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from datetime import datetime
 from pymongo import MongoClient, DESCENDING
@@ -188,31 +189,59 @@ def salvar_conexao_strava(dados_atleta: dict, tokens: dict):
         return False
 
 # ==============================================================
-# 🏆 RANKING GLOBAL
+# 🏆 RANKING GLOBAL (com cache de 60s para reduzir carga no Render)
 # ==============================================================
 
+_ranking_cache: dict = {"data": None, "ts": 0.0}
+_RANKING_CACHE_TTL = 60  # segundos
+
 def obter_ranking_global(limite=50):
-    if mongo_db is None: return []
+    global _ranking_cache
+
+    # Serve do cache se ainda estiver fresco
+    agora = time.time()
+    if _ranking_cache["data"] is not None and (agora - _ranking_cache["ts"]) < _RANKING_CACHE_TTL:
+        return _ranking_cache["data"]
+
+    if mongo_db is None: return _ranking_cache["data"] or []
+
     try:
-        cursor = mongo_db["usuarios"].find(
-            {"plano": {"$ne": "banned"}},
-            {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1, "objetivo": 1, "cla_atual_id": 1}
-        ).sort("xp_total", DESCENDING).limit(limite)
-        
-        return [{
-            "posicao":  i + 1,
-            "user_id":  str(doc["_id"]),
-            "nome":     doc.get("nome", "Anônimo"),
-            "foto":     doc.get("foto_perfil", ""),
-            "xp_total": doc.get("xp_total", 0),
-            "nivel":    doc.get("nivel", 1),
-            "objetivo": doc.get("objetivo", ""),
-            "cla_atual_id": doc.get("cla_atual_id", ""),
-            "titulo": "Atleta Elite"
-        } for i, doc in enumerate(cursor)]
+        # Projeção mínima — exclui campos pesados como objetivo, cla_atual_id, senha_hash, etc.
+        # Hierarquia: nível maior sempre fica no topo; xp_total é critério de desempate
+        cursor = (
+            mongo_db["usuarios"]
+            .find(
+                {"plano": {"$ne": "banned"}},
+                {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1}
+            )
+            .sort([("nivel", DESCENDING), ("xp_total", DESCENDING)])
+            .limit(limite)
+            .max_time_ms(5000)
+        )
+
+        resultado = []
+        for i, doc in enumerate(cursor):
+            foto = doc.get("foto_perfil", "")
+            # Descarta imagens base64 — podem ter centenas de KB por documento
+            if foto and foto.startswith("data:"):
+                foto = ""
+            resultado.append({
+                "posicao":  i + 1,
+                "user_id":  str(doc["_id"]),
+                "nome":     doc.get("nome", "Anônimo"),
+                "foto":     foto,
+                "xp_total": doc.get("xp_total", 0),
+                "nivel":    doc.get("nivel", 1),
+            })
+
+        _ranking_cache = {"data": resultado, "ts": agora}
+        logger.info(f"⚡ Ranking atualizado no cache ({len(resultado)} jogadores).")
+        return resultado
+
     except Exception as e:
         logger.error(f"❌ Erro no ranking: {e}")
-        return []
+        # Devolve o cache antigo em caso de falha para não deixar o frontend em branco
+        return _ranking_cache["data"] or []
 
 # ==============================================================
 # 🧠 PLANOS MESTRE (ROBUSTEZ DE TREINOS HÍBRIDOS)
