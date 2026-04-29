@@ -207,7 +207,9 @@ def obter_ranking_global(limite=50):
 
     try:
         # Projeção mínima — exclui campos pesados como objetivo, cla_atual_id, senha_hash, etc.
-        # Hierarquia: nível maior sempre fica no topo; xp_total é critério de desempate
+        # Hierarquia: nível maior sempre fica no topo; xp_total é critério de desempate.
+        # allow_disk_use=True: evita QueryExceededMemoryLimitNoDiskUseAllowed no Atlas M0/M2
+        # quando a ordenação composta ultrapassa o limite de 32 MB de RAM.
         cursor = (
             mongo_db["usuarios"]
             .find(
@@ -215,8 +217,9 @@ def obter_ranking_global(limite=50):
                 {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1}
             )
             .sort([("nivel", DESCENDING), ("xp_total", DESCENDING)])
+            .allow_disk_use(True)
             .limit(limite)
-            .max_time_ms(5000)
+            .max_time_ms(8000)
         )
 
         resultado = []

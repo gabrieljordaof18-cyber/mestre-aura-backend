@@ -1439,6 +1439,36 @@ def enviar_pedido_amizade(current_user_id):
         return jsonify({"erro": str(e)}), 500
 
 
+@api_bp.route('/social/amizade/remover', methods=['POST'])
+@token_required
+def remover_amizade(current_user_id):
+    """Remove a amizade mútua confirmada entre dois usuários (Unfriend)."""
+    try:
+        dados = request.get_json(force=True)
+        amigo_id = str(dados.get("amigo_id", "")).strip()
+        if not amigo_id:
+            return jsonify({"erro": "amigo_id é obrigatório"}), 400
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        resultado = mongo_db["amizades"].delete_one({
+            "$or": [
+                {"solicitante_id": current_user_id, "receptor_id": amigo_id, "status": "aceita"},
+                {"solicitante_id": amigo_id, "receptor_id": current_user_id, "status": "aceita"},
+            ]
+        })
+
+        if resultado.deleted_count == 0:
+            return jsonify({"erro": "Amizade não encontrada ou já removida"}), 404
+
+        logger.info(f"💔 Amizade removida entre {current_user_id} e {amigo_id}")
+        return jsonify({"sucesso": True}), 200
+
+    except Exception as e:
+        logger.error(f"Erro ao remover amizade: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
 @api_bp.route('/social/amizade/responder', methods=['POST'])
 @token_required
 def responder_pedido_amizade(current_user_id):
