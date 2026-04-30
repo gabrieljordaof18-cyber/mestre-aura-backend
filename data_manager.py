@@ -206,26 +206,27 @@ def obter_ranking_global(limite=50):
     if mongo_db is None: return _ranking_cache["data"] or []
 
     try:
-        # Projeção mínima — exclui campos pesados como objetivo, cla_atual_id, senha_hash, etc.
-        # Hierarquia: nível maior sempre fica no topo; xp_total é critério de desempate.
-        # allow_disk_use=True: evita QueryExceededMemoryLimitNoDiskUseAllowed no Atlas M0/M2
-        # quando a ordenação composta ultrapassa o limite de 32 MB de RAM.
+        # O índice composto (nivel DESC, xp_total DESC) criado na seção de índices permite que
+        # o MongoDB resolva este sort como um index scan — sem carregar nada na RAM.
+        # Isso elimina o QueryExceededMemoryLimitNoDiskUseAllowed no Atlas M0 (free tier),
+        # que NÃO suporta allowDiskUse e ignora silenciosamente essa opção.
         cursor = (
             mongo_db["usuarios"]
             .find(
                 {"plano": {"$ne": "banned"}},
+                # Projeção mínima: foto_perfil é o único campo pesado que mantemos
+                # (base64 é descartado logo abaixo)
                 {"nome": 1, "foto_perfil": 1, "xp_total": 1, "nivel": 1}
             )
             .sort([("nivel", DESCENDING), ("xp_total", DESCENDING)])
-            .allow_disk_use(True)
             .limit(limite)
-            .max_time_ms(8000)
+            .max_time_ms(10000)
         )
 
         resultado = []
         for i, doc in enumerate(cursor):
             foto = doc.get("foto_perfil", "")
-            # Descarta imagens base64 — podem ter centenas de KB por documento
+            # Base64 pode ter centenas de KB — descarta para não inflar a resposta JSON
             if foto and foto.startswith("data:"):
                 foto = ""
             resultado.append({
@@ -325,6 +326,16 @@ if mongo_db is not None:
             
         if "xp_total_-1" not in indices_atuais:
             colecao_usuarios.create_index([("xp_total", -1)])
+
+        # Índice composto para o Ranking Global (nivel DESC + xp_total DESC).
+        # Crítico: evita sort em memória (QueryExceededMemoryLimitNoDiskUseAllowed) no Atlas M0.
+        # Com esse índice, o MongoDB faz um index scan ordenado — sem usar RAM para sort.
+        if "nivel_-1_xp_total_-1" not in indices_atuais:
+            colecao_usuarios.create_index(
+                [("nivel", DESCENDING), ("xp_total", DESCENDING)],
+                name="nivel_-1_xp_total_-1"
+            )
+            logger.info("⚡ Índice composto nivel+xp_total criado para o Ranking Global.")
             
         # Índice para busca rápida de planos
         mongo_db["plans"].create_index([("user_id", 1), ("tipo", 1)])
