@@ -40,7 +40,7 @@ api_bp = Blueprint('api_bp', __name__)
 
 JWT_SECRET    = os.getenv("JWT_SECRET", "aura-mude-esta-chave-em-producao")
 JWT_ALGORITHM = "HS256"
-JWT_EXP_DAYS  = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_DAYS", 7))
+JWT_EXP_DAYS  = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_DAYS", 30))
 
 def gerar_token_jwt(user_id: str) -> str:
     """Gera um token JWT assinado. Validade lida de JWT_ACCESS_TOKEN_EXPIRES_DAYS no .env."""
@@ -865,7 +865,11 @@ def entrar_cla(current_user_id):
         # Verifica se já é membro
         membros = cla.get("membros", [])
         if any(m["user_id"] == current_user_id for m in membros):
-            return jsonify({"erro": "Você já é membro deste clã"}), 409
+            # Usuário já está no clã porém cla_atual_id pode ter sido zerado
+            # (ex: cold start do Render, bug anterior). Re-sincroniza silenciosamente.
+            salvar_memoria(current_user_id, {"cla_atual_id": cla_id})
+            logger.info(f"[CLA] Re-sincronizando cla_atual_id para usuário {current_user_id} no clã {cla_id}")
+            return jsonify({"sucesso": True, "ja_membro": True}), 200
 
         agora = datetime.now().isoformat()
         mongo_db["Clas"].update_one(
