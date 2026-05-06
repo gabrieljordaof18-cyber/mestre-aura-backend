@@ -84,8 +84,125 @@ def token_required(f):
     return decorated
 
 # ===================================================
-# 🔐 AUTENTICAÇÃO NATIVA — REGISTER / LOGIN
+# 🔐 AUTENTICAÇÃO NATIVA — REGISTER / LOGIN / SOCIAL
 # ===================================================
+
+@api_bp.route('/auth/social', methods=['POST', 'OPTIONS'])
+def auth_social():
+    """
+    Autenticação via provedor social (Google ou Apple).
+    Body: { "provider": "google"|"apple", "token": "<id_token>", "nome": "<opcional>" }
+    - Verifica o token com o provedor externo.
+    - Cria o usuário se não existir (novo_usuario = True → onboarding_completo = False).
+    - Garante que auth_provider esteja atualizado no MongoDB.
+    - Retorna JWT + onboarding_completo para o front redirecionar corretamente.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
+    try:
+        dados = request.get_json(force=True) or {}
+        provider      = dados.get('provider', '').strip().lower()
+        token_social  = dados.get('token', '').strip()
+        nome_sugerido = dados.get('nome', '').strip()
+
+        if provider not in ('google', 'apple'):
+            return jsonify({"erro": "Provedor inválido. Use 'google' ou 'apple'"}), 400
+        if not token_social:
+            return jsonify({"erro": "Token ausente"}), 400
+
+        email         = None
+        nome_provedor = ''
+
+        # ── Verificação Google ──────────────────────────────────────────
+        if provider == 'google':
+            resp = requests.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": token_social},
+                timeout=10
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Google tokeninfo rejeitou: {resp.text[:200]}")
+                return jsonify({"erro": "Token Google inválido"}), 401
+            info = resp.json()
+            email         = info.get('email', '').strip().lower()
+            nome_provedor = info.get('name', '') or info.get('given_name', '')
+
+        # ── Verificação Apple ───────────────────────────────────────────
+        elif provider == 'apple':
+            try:
+                from jose import jwt as jose_jwt
+
+                keys_resp = requests.get("https://appleid.apple.com/auth/keys", timeout=10)
+                if keys_resp.status_code != 200:
+                    return jsonify({"erro": "Falha ao buscar chaves Apple"}), 502
+                apple_keys = keys_resp.json().get('keys', [])
+
+                header = jose_jwt.get_unverified_header(token_social)
+                kid    = header.get('kid')
+                key    = next((k for k in apple_keys if k.get('kid') == kid), None)
+                if not key:
+                    return jsonify({"erro": "Chave pública Apple não encontrada"}), 401
+
+                payload = jose_jwt.decode(
+                    token_social,
+                    key,
+                    algorithms=['RS256'],
+                    issuer='https://appleid.apple.com',
+                    options={"verify_aud": False}
+                )
+                email = payload.get('email', '').strip().lower()
+                # Apple fornece nome apenas no primeiro login (via frontend)
+                nome_provedor = ''
+            except Exception as e:
+                logger.error(f"Verificação Apple falhou: {e}")
+                return jsonify({"erro": "Token Apple inválido"}), 401
+
+        if not email:
+            return jsonify({"erro": "E-mail não disponível no token do provedor"}), 400
+
+        nome_final = (nome_sugerido or nome_provedor or email.split('@')[0]).strip()
+
+        # ── Busca ou cria usuário ───────────────────────────────────────
+        usuario     = buscar_usuario_por_email(email)
+        novo_usuario = usuario is None
+
+        if novo_usuario:
+            usuario = criar_novo_usuario(email, nome_final, auth_provider=provider)
+            if not usuario:
+                return jsonify({"erro": "Falha ao criar usuário"}), 500
+        else:
+            # Garante auth_provider atualizado mesmo que o usuário já exista
+            atualizar_usuario(str(usuario["_id"]), {
+                "auth_provider": provider,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+
+        token_jwt = gerar_token_jwt(str(usuario["_id"]))
+
+        # onboarding_completo: novo usuário jamais completou; usuário existente usa o campo
+        onboarding_completo = (not novo_usuario) and bool(
+            usuario.get('configuracoes_sistema', {}).get('onboarding_completo', False)
+        )
+
+        logger.info(f"✅ Auth social ({provider}): {email} | novo={novo_usuario}")
+
+        return jsonify({
+            "sucesso":            True,
+            "token":              token_jwt,
+            "user_id":            str(usuario["_id"]),
+            "nome":               usuario.get("nome", nome_final),
+            "email":              email,
+            "plano":              usuario.get("plano", "free"),
+            "onboarding_completo": onboarding_completo,
+            "novo_usuario":       novo_usuario,
+            "auth_provider":      provider,
+        })
+
+    except Exception as e:
+        logger.error(f"Erro no auth social: {e}")
+        return jsonify({"erro": "Falha interna na autenticação social"}), 500
+
 
 @api_bp.route('/auth/register', methods=['POST', 'OPTIONS'])
 def registrar_usuario():
@@ -870,8 +987,13 @@ def get_membros_cla(current_user_id, cla_id):
                 "cargo":    {"owner": "Líder", "co-leader": "Co-Líder", "member": "Membro"}.get(cargo_key, "Membro"),
                 "joined_at": m.get("joined_at", "")
             })
-        # Ordena: líder primeiro, depois por XP
-        membros_out.sort(key=lambda x: (0 if x["roleKey"] == "owner" else 1, -x["xp"]))
+        # Ordena: líder → co-líder → demais por nível desc → XP desc como tie-break
+        _cargo_order = {"owner": 0, "co-leader": 1}
+        membros_out.sort(key=lambda x: (
+            _cargo_order.get(x["roleKey"], 2),
+            -x.get("nivel", 1),
+            -x.get("xp", 0)
+        ))
         return jsonify(membros_out), 200
     except Exception as e:
         logger.error(f"Erro ao buscar membros do clã {cla_id}: {e}")
