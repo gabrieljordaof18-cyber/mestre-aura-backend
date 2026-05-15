@@ -16,6 +16,11 @@ _SUPPORT_EMAIL = os.getenv("AURA_SUPPORT_EMAIL", "suporte@auraperformance.app")
 _PRIVACY_EMAIL = os.getenv("AURA_PRIVACY_EMAIL", "privacidade@auraperformance.app")
 _HOST_DISPLAY = _PUBLIC_SITE_URL.replace("https://", "").replace("http://", "")
 
+_GOOGLE_SITE_VERIFICATION_META_HOME = (
+    '<meta name="google-site-verification"'
+    ' content="k7eNvVoCpnA9vhdzjp-1LP3Fg_8oZNmQI0UjhZZitfk" />'
+)
+
 
 def _nav_html(active_key: str) -> str:
     items = [
@@ -51,12 +56,15 @@ def _social_links_html() -> str:
     return '<ul class="social-list">' + "".join(items) + "</ul>"
 
 
-def _wrap_page(browser_title: str, body: str, active_nav: str) -> str:
+def _wrap_page(
+    browser_title: str, body: str, active_nav: str, head_first: str = ""
+) -> str:
     nav = _nav_html(active_nav)
+    prefix = f"  {head_first}\n" if head_first.strip() else ""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8"/>
+{prefix}  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="description" content="Aura Performance OS — performance atletica, biohacking e evolucao mensuravel."/>
   <title>{browser_title} — Aura Performance OS</title>
@@ -369,7 +377,9 @@ def register_public_routes(flask_app):
 
     @flask_app.route("/")
     def pagina_home():
-        html = _wrap_page("Início", _landing_body(), "home")
+        html = _wrap_page(
+            "Início", _landing_body(), "home", head_first=_GOOGLE_SITE_VERIFICATION_META_HOME
+        )
         return Response(html, mimetype="text/html; charset=utf-8")
 
     @flask_app.route("/suporte")
