@@ -6,6 +6,7 @@ from flask_cors import CORS
 from rotas_api import api_bp
 from rotas_strava import strava_bp
 from public_site import register_public_routes
+from admin_bp import admin_bp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,6 +15,13 @@ logging.basicConfig(
 logger = logging.getLogger("AURA_APP")
 
 app = Flask(__name__)
+
+# Chave de sessão para o painel admin (usa JWT_SECRET como fallback seguro)
+app.secret_key = (
+    os.getenv("FLASK_SECRET_KEY")
+    or os.getenv("JWT_SECRET")
+    or "aura-dev-secret-change-me"
+)
 
 # ===================================================
 # 🔐 CORS — CONFIGURAÇÃO ULTRA-ROBUSTA PARA IOS
@@ -51,6 +59,7 @@ CORS(app, resources={
 # Se no rotas_api.py a rota for /auth/register, ela vira /api/auth/register
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(strava_bp, url_prefix='/strava')
+app.register_blueprint(admin_bp)
 
 # Site publico (landing, suporte, legais) + health JSON em /health e /api/health
 register_public_routes(app)

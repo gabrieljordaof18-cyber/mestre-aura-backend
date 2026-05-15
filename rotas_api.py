@@ -2217,6 +2217,58 @@ def pedidos_pendentes(current_user_id):
         return jsonify({"pedidos": []}), 200
 
 
+# ===================================================
+# 🔐 ADMIN — ATUALIZAÇÃO DE STATUS DE PEDIDOS
+# ===================================================
+
+@api_bp.route('/admin/pedidos/<pedido_id>/status', methods=['PATCH'])
+def admin_atualizar_status_pedido(pedido_id):
+    """
+    Atualiza o status de um pedido do marketplace.
+    Protegido por header X-Admin-Key = ADMIN_SECRET_KEY.
+    Body: { "status": "...", "codigo_rastreio": "opcional" }
+    """
+    secret = os.getenv("ADMIN_SECRET_KEY", "")
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not secret or admin_key != secret:
+        logger.warning(f"⚠️ Tentativa de acesso admin rejeitada para pedido {pedido_id}.")
+        return jsonify({"erro": "Acesso não autorizado"}), 403
+
+    dados = request.get_json(force=True) or {}
+    novo_status = dados.get("status", "")
+    codigo_rastreio = dados.get("codigo_rastreio", "").strip()
+
+    _STATUS_VALIDOS = {"ENVIADO_FORNECEDOR", "RASTREIO_GERADO", "ENTREGUE", "CANCELADO"}
+    if novo_status not in _STATUS_VALIDOS:
+        return jsonify({"erro": f"Status inválido. Aceitos: {sorted(_STATUS_VALIDOS)}"}), 400
+
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco de dados indisponível"}), 503
+
+        update_set = {
+            "status": novo_status,
+            "updated_at": datetime.now().isoformat()
+        }
+        if novo_status == "RASTREIO_GERADO" and codigo_rastreio:
+            update_set["codigo_rastreio"] = codigo_rastreio
+            update_set["rastreio_atualizado_em"] = datetime.now().isoformat()
+
+        resultado = mongo_db["pedidos"].update_one(
+            {"_id": ObjectId(pedido_id)},
+            {"$set": update_set}
+        )
+        if resultado.matched_count == 0:
+            return jsonify({"erro": "Pedido não encontrado"}), 404
+
+        logger.info(f"✅ Admin atualizou pedido {pedido_id} → {novo_status}")
+        return jsonify({"sucesso": True, "status": novo_status}), 200
+
+    except Exception as e:
+        logger.error(f"Erro ao atualizar status do pedido {pedido_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
 _ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "")
 
 @api_bp.route('/webhook/asaas', methods=['POST'])
@@ -2243,13 +2295,17 @@ def webhook_asaas():
 
             pedido = mongo_db["pedidos"].find_one({"asaas_id": payment_id})
             if pedido:
+                update_fields = {
+                    "status": "PAGO",
+                    "pago_em": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                # [AURA MARKETPLACE] Marca para notificação admin se for pedido marketplace
+                if pedido.get("tipo") == "marketplace":
+                    update_fields["notificado_admin"] = False
                 mongo_db["pedidos"].update_one(
                     {"asaas_id": payment_id},
-                    {"$set": {
-                        "status": "PAGO",
-                        "pago_em": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }}
+                    {"$set": update_fields}
                 )
                 logger.info(f"✅ Pedido {payment_id} atualizado para PAGO no Atlas.")
             else:
