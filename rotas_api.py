@@ -21,7 +21,7 @@ from logic_gamificacao import (
     registrar_conclusao_missao, ativar_seguro_ofensiva
 )
 from logic_equilibrio import calcular_e_atualizar_equilibrio
-from logic import processar_comando 
+from logic import processar_comando, processar_comando_com_imagem
 from logic_feedback import gerar_feedback_emocional
 from logic_asaas import criar_cobranca
 
@@ -783,6 +783,10 @@ def criar_cla(current_user_id):
         if existente:
             return jsonify({"erro": "Já existe um clã com esse nome"}), 409
 
+        tipo_cla = str(dados.get("tipo", "aberto")).strip().lower()
+        if tipo_cla not in ("aberto", "fechado"):
+            tipo_cla = "aberto"
+
         agora = datetime.now().isoformat()
         doc_cla = {
             "nome":               nome,
@@ -790,6 +794,7 @@ def criar_cla(current_user_id):
             "emblema":            str(dados.get("emblema", "shield")),
             "cor":                str(dados.get("cor", "#FFD700")),
             "tags":               list(dados.get("tags", [])),
+            "tipo":               tipo_cla,
             "lider_id":           current_user_id,
             "membros": [{
                 "user_id":        current_user_id,
@@ -797,6 +802,7 @@ def criar_cla(current_user_id):
                 "xp_contribuicao": 0,
                 "joined_at":      agora
             }],
+            "solicitacoes_pendentes": [],
             "nivel":              1,
             "total_xp":           0,
             "missao_ativa_tipo":  (dados.get("tags") or ["Híbrido"])[0].split(" ")[0] if dados.get("tags") else "Híbrido",
@@ -832,13 +838,14 @@ def listar_clas():
         cursor = mongo_db["Clas"].find(
             {"ativo": True},
             {"_id": 1, "nome": 1, "descricao": 1, "emblema": 1, "cor": 1,
-             "tags": 1, "nivel": 1, "total_xp": 1, "membros": 1}
+             "tags": 1, "nivel": 1, "total_xp": 1, "membros": 1, "tipo": 1}
         ).sort("total_xp", -1).limit(50)
         clans = []
         for d in cursor:
             d["id"] = str(d.pop("_id"))
             d["num_membros"] = len(d.get("membros", []))
             d.pop("membros", None)
+            d.setdefault("tipo", "aberto")
             clans.append(d)
         return jsonify(clans), 200
     except Exception as e:
@@ -865,12 +872,32 @@ def entrar_cla(current_user_id):
         # Verifica se já é membro
         membros = cla.get("membros", [])
         if any(m["user_id"] == current_user_id for m in membros):
-            # Usuário já está no clã porém cla_atual_id pode ter sido zerado
-            # (ex: cold start do Render, bug anterior). Re-sincroniza silenciosamente.
             salvar_memoria(current_user_id, {"cla_atual_id": cla_id})
             logger.info(f"[CLA] Re-sincronizando cla_atual_id para usuário {current_user_id} no clã {cla_id}")
             return jsonify({"sucesso": True, "ja_membro": True}), 200
 
+        tipo_cla = cla.get("tipo", "aberto")
+
+        # Clã fechado → adiciona solicitação pendente em vez de entrar direto
+        if tipo_cla == "fechado":
+            solicitacoes = cla.get("solicitacoes_pendentes", [])
+            if any(s["user_id"] == current_user_id for s in solicitacoes):
+                return jsonify({"status": "solicitacao_enviada", "ja_solicitado": True}), 200
+
+            user_data = carregar_memoria(current_user_id) or {}
+            mongo_db["Clas"].update_one(
+                {"_id": ObjectId(cla_id)},
+                {"$push": {"solicitacoes_pendentes": {
+                    "user_id":      current_user_id,
+                    "nome":         user_data.get("nome", "Atleta"),
+                    "nivel":        user_data.get("nivel", 1),
+                    "solicitado_em": datetime.now().isoformat()
+                }}}
+            )
+            logger.info(f"[CLA] Solicitação de entrada enviada por {current_user_id} para clã fechado {cla_id}")
+            return jsonify({"status": "solicitacao_enviada"}), 200
+
+        # Clã aberto → entra diretamente
         agora = datetime.now().isoformat()
         mongo_db["Clas"].update_one(
             {"_id": ObjectId(cla_id)},
@@ -885,6 +912,88 @@ def entrar_cla(current_user_id):
         return jsonify({"sucesso": True}), 200
     except Exception as e:
         logger.error(f"Erro ao entrar no clã: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/solicitacoes', methods=['GET'])
+@token_required
+def listar_solicitacoes_cla(current_user_id, cla_id):
+    """Retorna solicitações de entrada pendentes no clã (apenas líderes/co-líderes)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+        if not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID do clã inválido"}), 400
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id), "ativo": True})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        membros = cla.get("membros", [])
+        meu_cargo = next((m.get("cargo") for m in membros if m["user_id"] == current_user_id), None)
+        if meu_cargo not in ("owner", "co-leader"):
+            return jsonify({"erro": "Apenas líderes podem ver as solicitações"}), 403
+
+        return jsonify({"solicitacoes": cla.get("solicitacoes_pendentes", [])}), 200
+    except Exception as e:
+        logger.error(f"Erro ao listar solicitações do clã {cla_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@api_bp.route('/cla/<cla_id>/solicitacao/responder', methods=['POST'])
+@token_required
+def responder_solicitacao_cla(current_user_id, cla_id):
+    """Aceita ou recusa uma solicitação de entrada (apenas líderes/co-líderes)."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+        if not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID do clã inválido"}), 400
+
+        dados = request.get_json(force=True)
+        solicitante_id = str(dados.get("user_id", "")).strip()
+        aceitar = bool(dados.get("aceitar", False))
+
+        if not solicitante_id:
+            return jsonify({"erro": "user_id é obrigatório"}), 400
+
+        cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id), "ativo": True})
+        if not cla:
+            return jsonify({"erro": "Clã não encontrado"}), 404
+
+        membros = cla.get("membros", [])
+        meu_cargo = next((m.get("cargo") for m in membros if m["user_id"] == current_user_id), None)
+        if meu_cargo not in ("owner", "co-leader"):
+            return jsonify({"erro": "Apenas líderes podem responder solicitações"}), 403
+
+        # Remove da lista de solicitações em qualquer caso
+        mongo_db["Clas"].update_one(
+            {"_id": ObjectId(cla_id)},
+            {"$pull": {"solicitacoes_pendentes": {"user_id": solicitante_id}}}
+        )
+
+        if aceitar:
+            # Verifica que ainda não é membro
+            if not any(m["user_id"] == solicitante_id for m in membros):
+                agora = datetime.now().isoformat()
+                mongo_db["Clas"].update_one(
+                    {"_id": ObjectId(cla_id)},
+                    {"$push": {"membros": {
+                        "user_id": solicitante_id,
+                        "cargo": "member",
+                        "xp_contribuicao": 0,
+                        "joined_at": agora
+                    }}, "$set": {"updated_at": agora}}
+                )
+                salvar_memoria(solicitante_id, {"cla_atual_id": cla_id})
+                logger.info(f"[CLA] Solicitação de {solicitante_id} aceita no clã {cla_id} por {current_user_id}")
+            return jsonify({"sucesso": True, "acao": "aceito"}), 200
+        else:
+            logger.info(f"[CLA] Solicitação de {solicitante_id} recusada no clã {cla_id} por {current_user_id}")
+            return jsonify({"sucesso": True, "acao": "recusado"}), 200
+
+    except Exception as e:
+        logger.error(f"Erro ao responder solicitação do clã {cla_id}: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
@@ -1032,13 +1141,23 @@ def get_chat_cla(current_user_id, cla_id):
 @api_bp.route('/comando', methods=['POST'])
 @token_required
 def comando(current_user_id):
+    """
+    Endpoint principal do Mestre da Aura.
+    Aceita texto e, opcionalmente, uma imagem em base64 para análise multimodal.
+    Quando imagem_base64 estiver presente, usa gpt-4o com visão.
+    """
     try:
-        dados = request.get_json(force=True) 
-        msg = dados.get('comando', '').strip()
-        if not msg: return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
-        
-        # O processar_comando no logic.py agora lida com os 10 exercícios e híbridos
-        resposta = processar_comando(current_user_id, msg)
+        dados         = request.get_json(force=True)
+        msg           = dados.get("comando", "").strip()
+        imagem_base64 = dados.get("imagem_base64", "").strip()
+
+        if imagem_base64:
+            resposta = processar_comando_com_imagem(current_user_id, msg, imagem_base64)
+        else:
+            if not msg:
+                return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
+            resposta = processar_comando(current_user_id, msg)
+
         return jsonify({"resposta": resposta})
     except Exception as e:
         logger.error(f"Erro no comando IA para {current_user_id}: {e}")
@@ -1301,10 +1420,131 @@ def listar_atividades(current_user_id):
         logger.error(f"Erro ao listar atividades de {current_user_id}: {e}")
         return jsonify({"atividades": []}), 200
 
+def _mapear_categoria_missao(tipo_atividade: str) -> str:
+    """
+    Converte o tipo/tag da atividade para a categoria de missão correspondente.
+    Espelha a função resolverCategoriaMissao() do frontend (RegistrarAtividade.jsx).
+    """
+    t = str(tipo_atividade or "").strip().lower()
+    if t == "sono":
+        return "descanso"
+    if t in ("meditação", "meditacao"):
+        return "mente"
+    if t in ("nutrição", "nutricao", "hidratação", "hidratacao"):
+        return "saude"
+    return "treino"
+
+
+def _tentar_completar_missao_auto(user_id: str, tipo_atividade: str, duracao_str: str):
+    """
+    Após registrar uma atividade, verifica se há missão diária ativa não concluída
+    que corresponda ao tipo/categoria da atividade e à duração informada.
+
+    Retorna um dict com os campos de recompensa se uma missão foi completada,
+    ou None se nenhuma missão correspondeu ou foi completada.
+    Também retorna um dict de progresso parcial se a duração não atingiu a meta.
+    """
+    try:
+        memoria = carregar_memoria(user_id)
+        if not memoria:
+            return None, None
+
+        gamificacao = memoria.get("gamificacao", {})
+        missoes = gamificacao.get("missoes_ativas", [])
+        if not missoes:
+            return None, None
+
+        tipo_lower = str(tipo_atividade or "").strip().lower()
+        categoria_mapeada = _mapear_categoria_missao(tipo_atividade)
+
+        # Converte duração "HH:MM" para minutos
+        duracao_min = None
+        if duracao_str:
+            parts = str(duracao_str).split(":")
+            if len(parts) >= 2:
+                try:
+                    duracao_min = int(parts[0]) * 60 + int(parts[1])
+                except (ValueError, TypeError):
+                    pass
+
+        for m in missoes:
+            if m.get("concluida"):
+                continue
+
+            cat_m = str(m.get("categoria", "")).strip().lower()
+            tipo_m = str(m.get("tipo", "")).strip().lower()
+            titulo_m = str(m.get("titulo", "")).strip().lower()
+
+            bateu = (
+                cat_m == categoria_mapeada
+                or cat_m == tipo_lower
+                or tipo_m == categoria_mapeada
+                or tipo_m == tipo_lower
+                or titulo_m == tipo_lower
+            )
+            if not bateu:
+                continue
+
+            meta_min = m.get("meta_duracao_min")
+
+            # Missão com requisito de duração mínima
+            if meta_min and duracao_min is not None:
+                progresso_pct = min(100, int((duracao_min / meta_min) * 100))
+                if progresso_pct < 100:
+                    # Progresso parcial: atualiza estado mas não concede recompensa
+                    m["progresso_pct"] = progresso_pct
+                    salvar_memoria(user_id, memoria)
+                    falta_min = meta_min - duracao_min
+                    falta_h = falta_min // 60
+                    falta_m = falta_min % 60
+                    falta_texto = (
+                        f"{falta_h}h{falta_m:02d}min" if falta_h > 0 else f"{falta_m}min"
+                    )
+                    return None, {
+                        "parcial": True,
+                        "progresso_pct": progresso_pct,
+                        "falta_min": falta_min,
+                        "falta_texto": falta_texto,
+                        "nome": m.get("titulo", "Missão"),
+                    }
+
+            # Missão completada — concede recompensa integral
+            m["concluida"] = True
+            m["progresso_pct"] = 100
+            salvar_memoria(user_id, memoria)
+
+            resultado_missao = aplicar_xp(user_id, m.get("xp", 0))
+            dados_ofensiva = registrar_conclusao_missao(user_id)
+
+            completada = {
+                "nome":          m.get("titulo", "Missão Diária"),
+                "xp":            m.get("xp", 0),
+                "moedas":        resultado_missao.get("moedas_ganhas", m.get("xp", 0)),
+                "cristais":      resultado_missao.get("cristais_ganhos", m.get("xp", 0) // 10),
+                "ofensiva_atual": dados_ofensiva.get("ofensiva_atual", 0),
+                "novo_nivel":    resultado_missao.get("novo_nivel", 0),
+                "subiu":         resultado_missao.get("subiu", False),
+            }
+            logger.info(
+                f"✅ Missão '{completada['nome']}' auto-completada via registrar_atividade "
+                f"para {user_id} (tipo={tipo_atividade})"
+            )
+            return completada, None
+
+        return None, None
+    except Exception as e:
+        logger.error(f"Erro em _tentar_completar_missao_auto para {user_id}: {e}")
+        return None, None
+
+
 @api_bp.route('/registrar_atividade', methods=['POST'])
 @token_required
 def registrar_atividade(current_user_id):
-    """Registra uma nova atividade e concede XP ao usuário."""
+    """
+    Registra uma nova atividade, concede XP ao usuário e tenta
+    auto-completar qualquer missão diária ativa que corresponda
+    ao tipo/categoria da atividade registrada.
+    """
     try:
         dados = request.get_json(force=True)
         xp_atividade = int(dados.get("xp", 0))
@@ -1331,7 +1571,19 @@ def registrar_atividade(current_user_id):
         if xp_atividade > 0:
             resultado_xp = aplicar_xp(current_user_id, xp_atividade)
 
-        return jsonify({"sucesso": True, "dados_xp": resultado_xp}), 201
+        # Tenta completar automaticamente uma missão diária correspondente
+        tipo_atividade = dados.get("tipo", "")
+        duracao_str    = dados.get("duracao", "")
+        missao_completada, missao_parcial = _tentar_completar_missao_auto(
+            current_user_id, tipo_atividade, duracao_str
+        )
+
+        return jsonify({
+            "sucesso": True,
+            "dados_xp": resultado_xp,
+            "missao_completada": missao_completada,
+            "missao_parcial": missao_parcial,
+        }), 201
     except Exception as e:
         logger.error(f"Erro ao registrar atividade para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
@@ -1477,13 +1729,27 @@ def perfil_publico(current_user_id, user_id):
         # Conta missões concluídas
         missoes_count = mongo_db["atividades"].count_documents({"user_id": user_id})
 
-        # Nome do clã
+        # Dados do clã (objeto completo para exibir no modal de perfil)
         cla_nome = ""
+        cla_info = None
         cla_id = doc.get("cla_atual_id", "")
         if cla_id:
             try:
-                cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)}, {"nome": 1})
-                cla_nome = cla.get("nome", "") if cla else ""
+                cla_doc = mongo_db["Clas"].find_one(
+                    {"_id": ObjectId(cla_id)},
+                    {"nome": 1, "nivel": 1, "emblema": 1, "cor": 1, "membros": 1, "tipo": 1}
+                )
+                if cla_doc:
+                    cla_nome = cla_doc.get("nome", "")
+                    cla_info = {
+                        "id":            cla_id,
+                        "nome":          cla_doc.get("nome", ""),
+                        "nivel":         cla_doc.get("nivel", 1),
+                        "emblema":       cla_doc.get("emblema", "shield"),
+                        "cor":           cla_doc.get("cor", "#FFD700"),
+                        "tipo":          cla_doc.get("tipo", "aberto"),
+                        "total_membros": len(cla_doc.get("membros", [])),
+                    }
             except Exception:
                 pass
 
@@ -1510,6 +1776,7 @@ def perfil_publico(current_user_id, user_id):
             "xp_total":         doc.get("xp_total", 0),
             "objetivo":         doc.get("objetivo", ""),
             "cla_nome":         cla_nome,
+            "cla":              cla_info,
             "ofensiva_atual":   doc.get("ofensiva_atual", 0),
             "esportes":         doc.get("esportes_favoritos", []),
             "missoes_total":    missoes_count,
@@ -2300,14 +2567,57 @@ def webhook_asaas():
                     "pago_em": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
                 }
-                # [AURA MARKETPLACE] Marca para notificação admin se for pedido marketplace
-                if pedido.get("tipo") == "marketplace":
+                tipo_pedido = pedido.get("tipo", "marketplace")
+
+                # ── [PERFORMANCE] Ativar inscrição em desafio ────────────────
+                if tipo_pedido == "desafio":
+                    inscricao_id = pedido.get("inscricao_id")
+                    desafio_id   = pedido.get("desafio_id")
+                    if inscricao_id:
+                        try:
+                            mongo_db["inscricoes_desafio"].update_one(
+                                {"_id": ObjectId(inscricao_id)},
+                                {"$set": {"status_pagamento": "PAGO", "pago_em": datetime.now().isoformat()}}
+                            )
+                            # Incrementa vagas_ocupadas no desafio
+                            if desafio_id:
+                                mongo_db["desafios"].update_one(
+                                    {"_id": ObjectId(desafio_id)},
+                                    {"$inc": {"vagas_ocupadas": 1, "total_inscritos": 1}}
+                                )
+                                # Atualiza total_alunos do profissional
+                                d = mongo_db["desafios"].find_one({"_id": ObjectId(desafio_id)})
+                                if d:
+                                    mongo_db["profissionais"].update_one(
+                                        {"user_id": d.get("profissional_id")},
+                                        {"$inc": {"total_alunos": 1}}
+                                    )
+                            logger.info(f"✅ [PERF] Inscrição {inscricao_id} ativada via webhook.")
+                        except Exception as we:
+                            logger.error(f"[PERF] Erro ao ativar inscrição no webhook: {we}")
+
+                # ── [PERFORMANCE] Marcar verificação de profissional como paga ──
+                elif tipo_pedido == "verificacao_profissional":
+                    user_id_prof = pedido.get("user_id", "")
+                    if user_id_prof:
+                        try:
+                            mongo_db["profissionais"].update_one(
+                                {"user_id": user_id_prof},
+                                {"$set": {"verificacao_paga": True, "updated_at": datetime.now().isoformat()}}
+                            )
+                            logger.info(f"✅ [PERF] Verificação paga para profissional {user_id_prof}.")
+                        except Exception as ve:
+                            logger.error(f"[PERF] Erro ao marcar verificação: {ve}")
+
+                # ── [MARKETPLACE] Notificação admin ──────────────────────────
+                elif tipo_pedido == "marketplace":
                     update_fields["notificado_admin"] = False
+
                 mongo_db["pedidos"].update_one(
                     {"asaas_id": payment_id},
                     {"$set": update_fields}
                 )
-                logger.info(f"✅ Pedido {payment_id} atualizado para PAGO no Atlas.")
+                logger.info(f"✅ Pedido {payment_id} ({tipo_pedido}) atualizado para PAGO no Atlas.")
             else:
                 logger.warning(f"⚠️ Webhook Asaas: pedido {payment_id} não encontrado no Atlas.")
 

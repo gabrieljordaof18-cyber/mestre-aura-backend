@@ -200,6 +200,112 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     
     return texto_resposta
 
+
+# ======================================================
+# 📸 MESTRE DA AURA — MODO MULTIMODAL (ANÁLISE DE FOTOS)
+# ======================================================
+
+_PROMPT_ANALISE_IMAGEM = (
+    "\n\nANÁLISE DE IMAGENS:\n"
+    "Quando o usuário enviar uma foto, analise com atenção.\n"
+    "Se for uma foto de lesão ou região do corpo com dor:\n"
+    "  - Identifique a área afetada visualmente\n"
+    "  - Sugira exercícios que NÃO agravem a lesão\n"
+    "  - Sugira exercícios de reabilitação quando apropriado\n"
+    "  - Oriente sobre execução correta de movimentos seguros\n"
+    "  - Sempre recomende consultar um profissional de saúde para diagnóstico\n"
+    "Se for uma foto de execução de exercício:\n"
+    "  - Analise a postura e execução com base no que é visível\n"
+    "  - Aponte melhorias específicas e objetivas\n"
+    "  - Elogie os pontos corretos para motivar o atleta\n"
+    "Se a imagem não for relacionada a performance ou saúde, responda com:\n"
+    "  'Identifiquei a imagem, mas prefiro focar em performance e saúde. "
+    "Como posso ajudar com seu treino?'"
+)
+
+
+def processar_comando_com_imagem(user_id: str, mensagem: str, imagem_base64: str) -> str:
+    """
+    Variante multimodal de processar_comando.
+    Usa gpt-4o (com visão) para análise de fotos de lesões, execução de exercícios, etc.
+    """
+    if not user_id: return "⚠️ Erro de identificação do atleta."
+
+    memoria = carregar_memoria(user_id)
+    if not memoria:
+        return "⚠️ Não encontrei seu perfil. Certifique-se de estar logado corretamente."
+
+    nome_atleta     = memoria.get("nome", "Iniciado")
+    nivel_atleta    = memoria.get("nivel", 1)
+    status_plano    = memoria.get("plano", "free").upper()
+    objetivo_atleta = memoria.get("objetivo", "Performance Geral")
+    esportes_atleta = memoria.get("esportes_favoritos", ["Musculação"])
+    homeostase      = memoria.get("homeostase", {})
+    estado_bio      = homeostase.get("estado", "Estável")
+    score_bio       = homeostase.get("score", 50)
+
+    prompt_sistema = {
+        "role": "system",
+        "content": (
+            f"Você é o MESTRE DA AURA. Inteligência central do Sistema Operacional de Performance Humana.\n"
+            f"Atleta: {nome_atleta} | Nível: {nivel_atleta} | Plano: {status_plano}\n"
+            f"Objetivo: {objetivo_atleta} | Esportes Favoritos: {', '.join(esportes_atleta)}\n"
+            f"Estado Bio: {estado_bio} (Score: {score_bio})\n\n"
+            f"DIRETRIZES DE ATENDIMENTO:\n"
+            f"1. TOM: Técnico, estoico, motivador e focado em métricas de alto rendimento.\n"
+            f"2. TOOLS: Use tools apenas quando o usuário pedir para salvar Treinos e Dietas — "
+            f"não use tools em respostas de análise de imagem.\n"
+            f"3. PRIVACIDADE: Os dados de biometria são criptografados."
+            + _PROMPT_ANALISE_IMAGEM
+        )
+    }
+
+    # Histórico reduzido para não sobrecarregar o contexto multimodal
+    historico = _buscar_historico(user_id, limite=3)
+
+    texto_msg = (mensagem.strip() or "Analise esta imagem.")
+    content_usuario = [
+        {"type": "text",      "text": texto_msg},
+        {"type": "image_url", "image_url": {"url": imagem_base64, "detail": "high"}},
+    ]
+
+    mensagens = [prompt_sistema] + historico + [{"role": "user", "content": content_usuario}]
+
+    try:
+        if client is None:
+            return "⚠️ O Mestre está em meditação profunda (Sistema Offline)."
+
+        response = client.chat.completions.create(
+            model="gpt-4o",          # Modelo com suporte a visão
+            messages=mensagens,
+            temperature=0.6,
+            max_tokens=1500,
+        )
+        texto_resposta = response.choices[0].message.content.strip()
+
+    except Exception as e:
+        err_str = str(e).lower()
+        logger.error(f"Erro OpenAI multimodal para {user_id}: {e}")
+        if "timeout" in err_str or "timed out" in err_str:
+            texto_resposta = (
+                "⏳ O Mestre levou mais tempo do que o esperado para analisar a imagem. "
+                "Tente novamente com uma foto menor ou uma pergunta direta."
+            )
+        elif "invalid" in err_str and ("image" in err_str or "url" in err_str):
+            texto_resposta = (
+                "⚠️ Não consegui processar a imagem enviada. "
+                "Certifique-se de que é uma foto válida (JPEG ou PNG)."
+            )
+        else:
+            texto_resposta = "⚠️ O Mestre teve uma interrupção ao analisar a imagem. Tente novamente."
+
+    log_mensagem = f"[📸 Foto] {texto_msg}" if texto_msg != "Analise esta imagem." else "[📸 Foto enviada]"
+    _salvar_chat(user_id, "user", log_mensagem)
+    _salvar_chat(user_id, "assistant", texto_resposta)
+
+    return texto_resposta
+
+
 # --- Funções Internas de Apoio ---
 
 def _executar_ferramentas(user_id: str, tool_calls: list) -> str:

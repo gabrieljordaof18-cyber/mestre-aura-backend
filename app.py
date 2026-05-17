@@ -7,6 +7,7 @@ from rotas_api import api_bp
 from rotas_strava import strava_bp
 from public_site import register_public_routes
 from admin_bp import admin_bp
+from performance_bp import performance_bp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +61,7 @@ CORS(app, resources={
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(strava_bp, url_prefix='/strava')
 app.register_blueprint(admin_bp)
+app.register_blueprint(performance_bp, url_prefix='/api/performance')
 
 # Site publico (landing, suporte, legais) + health JSON em /health e /api/health
 register_public_routes(app)

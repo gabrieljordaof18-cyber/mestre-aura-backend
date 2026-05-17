@@ -135,6 +135,114 @@ def obter_schema_padrao_global() -> Dict[str, Any]:
         "ultima_atualizacao": datetime.now().isoformat()
     }
 
+# ==============================================================
+# 🏋️ SCHEMAS DE PERFORMANCE (Marketplace de Profissionais)
+# ==============================================================
+
+def obter_schema_padrao_profissional(user_id: str = "") -> Dict[str, Any]:
+    """
+    Estrutura de perfil profissional (personal, nutricionista, médico…).
+    Profissional cadastrado recebe 3 meses de período gratuito.
+    Após isso paga R$49,90/mês. Verificação de credenciais custa R$99,90.
+    """
+    from datetime import timedelta
+    agora = datetime.now()
+    plano_expira = (agora + timedelta(days=90)).isoformat()
+    return {
+        "user_id":             user_id,
+        "tipo_profissional":   "personal",        # personal|nutricionista|medico|fisioterapeuta|coach|nutrologo|endocrino
+        "bio":                 "",
+        "especialidades":      [],
+        "foto_perfil_url":     "",
+        "cref_crn_crm":        "",
+        "status_verificacao":  "pendente",        # pendente|verificado|rejeitado
+        "verificacao_paga":    False,
+        "plano_ativo":         True,
+        "plano_inicio":        agora.isoformat(),
+        "plano_expira":        plano_expira,
+        "total_alunos":        0,
+        "avaliacao_media":     0.0,
+        "total_avaliacoes":    0,
+        "criado_em":           agora.isoformat(),
+        "updated_at":          agora.isoformat(),
+    }
+
+
+def obter_schema_padrao_desafio(profissional_id: str = "") -> Dict[str, Any]:
+    """
+    Estrutura de desafio pago criado por um profissional.
+    AURA fica com 20%; profissional recebe 80%.
+    """
+    agora = datetime.now().isoformat()
+    return {
+        "profissional_id":    profissional_id,
+        "titulo":             "",
+        "descricao":          "",
+        "tipo":               "emagrecimento",    # emagrecimento|hipertrofia|saude|performance|reabilitacao
+        "duracao_dias":       30,
+        "preco":              0.0,
+        "vagas_total":        0,                  # 0 = ilimitado
+        "vagas_ocupadas":     0,
+        "data_inicio":        "",
+        "status":             "rascunho",         # ativo|encerrado|rascunho
+        "imagem_capa_url":    "",
+        "o_que_inclui":       [],
+        "protocolo": {
+            "treinos":            [],
+            "alimentacao":        "",
+            "suplementacao":      [],
+            "frequencia_semanal": 3,
+        },
+        "total_inscritos":    0,
+        "avaliacao_media":    0.0,
+        "total_avaliacoes":   0,
+        "criado_em":          agora,
+        "updated_at":         agora,
+        "aura_comissao_pct":  20,
+        "profissional_pct":   80,
+    }
+
+
+def obter_schema_padrao_inscricao(desafio_id: str = "", user_id: str = "", profissional_id: str = "") -> Dict[str, Any]:
+    """Inscrição de usuário em um desafio pago."""
+    agora = datetime.now().isoformat()
+    return {
+        "desafio_id":          desafio_id,
+        "user_id":             user_id,
+        "profissional_id":     profissional_id,
+        "asaas_id":            "",
+        "status_pagamento":    "PENDING",         # PENDING|PAGO|CANCELADO
+        "status_desafio":      "em_andamento",    # em_andamento|concluido|abandonado
+        "data_inscricao":      agora,
+        "data_inicio":         "",
+        "progresso": {
+            "dias_completos":  0,
+            "percentual":      0.0,
+            "ultimo_registro": "",
+        },
+        "avaliacao":           None,
+        "comentario":          "",
+        "valor_total":         0.0,
+        "valor_aura":          0.0,
+        "valor_profissional":  0.0,
+    }
+
+
+def obter_schema_padrao_mensagem_desafio(desafio_id: str = "", remetente_id: str = "") -> Dict[str, Any]:
+    """Mensagem no chat de um desafio (broadcast ou individual)."""
+    return {
+        "desafio_id":        desafio_id,
+        "remetente_id":      remetente_id,
+        "remetente_nome":    "",
+        "remetente_tipo":    "aluno",             # profissional|aluno
+        "tipo_mensagem":     "broadcast",         # broadcast|individual
+        "destinatario_id":   None,
+        "texto":             "",
+        "lida":              False,
+        "enviada_em":        datetime.now().isoformat(),
+    }
+
+
 def obter_schema_padrao_produto() -> Dict[str, Any]:
     """
     Estrutura de item no Marketplace.
