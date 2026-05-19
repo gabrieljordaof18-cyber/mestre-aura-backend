@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Paginas HTML publicas do Aura (site oficial no Render).
-Rotas: /, /suporte, /privacidade, /termos (+ aliases Apple) e /health para JSON.
+Rotas: /, /suporte, /privacidade, /termos (+ aliases Apple), /auth/google/callback e /health para JSON.
 
 Variaveis opcionais no Render:
   AURA_PUBLIC_SITE_URL (default https://mestre-aura.onrender.com)
@@ -9,7 +9,7 @@ Variaveis opcionais no Render:
   AURA_SOCIAL_INSTAGRAM_URL, AURA_SOCIAL_LINKEDIN_URL, AURA_SOCIAL_YOUTUBE_URL, AURA_SOCIAL_X_URL
 """
 import os
-from flask import Response, jsonify
+from flask import Response, jsonify, request
 
 _PUBLIC_SITE_URL = os.getenv("AURA_PUBLIC_SITE_URL", "https://mestre-aura.onrender.com").rstrip("/")
 _SUPPORT_EMAIL = os.getenv("AURA_SUPPORT_EMAIL", "suporte@auraperformance.app")
@@ -401,6 +401,38 @@ def register_public_routes(flask_app):
     def pagina_termos():
         body = _TERMS_TEMPLATE.format(support_email=_SUPPORT_EMAIL)
         html = _wrap_page("Termos de Uso (EULA)", body, "termos")
+        return Response(html, mimetype="text/html; charset=utf-8")
+
+    @flask_app.route("/auth/google/callback")
+    def google_oauth_callback():
+        """Callback web do Google OAuth — evita 404 quando o redirect URI aponta para o backend."""
+        _code = request.args.get("code")
+        _state = request.args.get("state")
+
+        html = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Autenticação — Aura</title>
+  <style>
+    body{background:#050505;color:#e5e5e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+    p{font-size:16px;line-height:1.5;max-width:320px}
+  </style>
+</head>
+<body>
+  <p>Autenticação concluída. Você pode fechar esta janela.</p>
+  <script>
+    (function () {
+      try { window.close(); } catch (e) {}
+      setTimeout(function () {
+        window.location.href = "aura://";
+      }, 1500);
+    })();
+  </script>
+</body>
+</html>"""
         return Response(html, mimetype="text/html; charset=utf-8")
 
     @flask_app.route("/health")
