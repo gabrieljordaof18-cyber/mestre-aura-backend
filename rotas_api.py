@@ -405,6 +405,19 @@ def concluir_tutorial(current_user_id):
         return jsonify({"erro": str(e)}), 500
 
 
+@api_bp.route('/tutorial/reset', methods=['POST'])
+@token_required
+def reset_tutorial(current_user_id):
+    """Reseta o tutorial — define first_access = True para que o onboarding
+    seja exibido novamente na próxima visita à Home."""
+    try:
+        salvar_memoria(current_user_id, {"first_access": True})
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao resetar tutorial para {current_user_id}: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
 # ===================================================
 # 🍎 CONSULTA DE PLANOS (ROBUSTEZ HÍBRIDA)
 # ===================================================
