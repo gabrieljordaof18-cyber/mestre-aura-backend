@@ -44,11 +44,14 @@ SCHEMA_EXERCICIO = {
         "exercicio": {"type": "string", "description": "Nome do exercício ou atividade (Ex: Supino Reto, Corrida na Esteira, Natação)"},
         "tipo": {"type": "string", "enum": ["forca", "cardio", "endurance", "flexibilidade"]},
         "periodo": {"type": "string", "enum": ["unico", "manha", "tarde", "noite"]},
+        "bloco": {"type": "string", "description": "Opcional: aquecimento, principal, finalizador, acessório"},
         "series": {"type": "string", "description": "Número de séries (Ex: 4)"},
         "reps": {"type": "string", "description": "Repetições ou tempo (Ex: 10-12 ou 45 seg)"},
+        "descanso": {"type": "string", "description": "Intervalo entre séries (Ex: 90s, 2min)"},
+        "rpe": {"type": "string", "description": "Percepção de esforço (Ex: RPE 7-8)"},
         "distancia": {"type": "string", "description": "Para cardios (Ex: 5, 500, 2.5)"},
         "unidade": {"type": "string", "enum": ["km", "m", "min", "reps"], "description": "Unidade da distância ou volume"},
-        "detalhes": {"type": "string", "description": "Dicas técnicas, cadência ou carga sugerida"}
+        "detalhes": {"type": "string", "description": "Dicas técnicas, cadência, carga sugerida ou progressão"}
     },
     "required": ["exercicio", "tipo", "periodo"]
 }
@@ -78,7 +81,7 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "CRIA um cronograma SEMANAL ROBUSTO. DEVE conter de 5 a 10 itens por dia de treino. Deve integrar Musculação com os esportes favoritos do atleta (Corrida, Ciclismo, etc).",
+            "description": "CRIA um cronograma SEMANAL ROBUSTO e EXTENSO. Use de 5 a 15+ exercícios por dia quando o protocolo exigir volume ou complexidade (periodizações avançadas, blocos híbridos, etc.). Deve integrar Musculação com os esportes favoritos do atleta (Corrida, Ciclismo, etc). Inclua aquecimento, bloco principal e finalizador quando relevante.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -151,7 +154,7 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             f"Estado Bio: {estado_bio} (Score: {score_bio})\n\n"
             f"DIRETRIZES DE ATENDIMENTO:\n"
             f"1. TOM: Técnico, estoico, motivador e focado em métricas de alto rendimento.\n"
-            f"2. TREINOS NATIVOS: Planilhas semanais devem ser densas (5 a 10 exercícios/dia). Se o plano for 'FREE', incentive o upgrade para o plano PRO para protocolos ilimitados.\n"
+            f"2. TREINOS NATIVOS: Planilhas semanais devem ser densas e extensas quando necessário (5 a 15+ exercícios/dia). Priorize volume, progressão e detalhamento técnico (séries, reps, carga, descanso, RPE). Se o plano for 'FREE', incentive o upgrade para o plano PRO para protocolos ilimitados.\n"
             f"3. LOGÍSTICA INTEGRADA: O Mercado Aura possui entrega em todo o Brasil. Informe que o cálculo de frete (Melhor Envio) é feito em tempo real no checkout.\n"
             f"4. TOOLS: Sempre use tools para salvar Treinos e Dietas. Após salvar, responda: 'Protocolo atualizado! Verifique a aba correspondente acima.'\n"
             f"5. PRIVACIDADE: Se questionado, confirme que os dados de biometria são criptografados e seguem a Política de Privacidade nativa do app."
@@ -165,13 +168,15 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     # 4. Execução OpenAI
     try:
         if client is None: return "⚠️ O Mestre está em meditação profunda (Sistema Offline)."
-        
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=mensagens,
             tools=TOOLS_AURA,
             tool_choice="auto",
-            temperature=0.6
+            temperature=0.6,
+            max_tokens=2048,
+            parallel_tool_calls=False,
         )
         
         msg_ia = response.choices[0].message

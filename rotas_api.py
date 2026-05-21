@@ -1,5 +1,6 @@
 import logging
 import os
+import concurrent.futures
 import requests
 import jwt
 from functools import wraps
@@ -1160,21 +1161,28 @@ def comando(current_user_id):
     Quando imagem_base64 estiver presente, usa gpt-4o com visão.
     """
     try:
-        dados         = request.get_json(force=True)
-        msg           = dados.get("comando", "").strip()
+        dados = request.get_json(force=True)
+        msg = dados.get("comando", "").strip()
         imagem_base64 = dados.get("imagem_base64", "").strip()
 
-        if imagem_base64:
-            resposta = processar_comando_com_imagem(current_user_id, msg, imagem_base64)
-        else:
-            if not msg:
-                return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
-            resposta = processar_comando(current_user_id, msg)
+        if not msg and not imagem_base64:
+            return jsonify({"resposta": "O Mestre aguarda suas palavras..."})
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            if imagem_base64:
+                future = executor.submit(processar_comando_com_imagem, current_user_id, msg, imagem_base64)
+            else:
+                future = executor.submit(processar_comando, current_user_id, msg)
+
+            try:
+                resposta = future.result(timeout=80)
+            except concurrent.futures.TimeoutError:
+                resposta = "⏳ Seu protocolo é muito denso para processar de uma vez. Tente dividir em partes menores ou seja mais direto na pergunta."
 
         return jsonify({"resposta": resposta})
     except Exception as e:
         logger.error(f"Erro no comando IA para {current_user_id}: {e}")
-        return jsonify({"resposta": "⚠️ O Mestre está meditando em silêncio. Tente novamente."})
+        return jsonify({"resposta": "⚠️ O Mestre teve uma interrupção. Tente novamente."})
 
 # ===================================================
 # 🎮 MISSÕES E GAMIFICAÇÃO
