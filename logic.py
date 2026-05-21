@@ -41,20 +41,33 @@ else:
 SCHEMA_EXERCICIO = {
     "type": "object",
     "properties": {
-        "exercicio": {"type": "string", "description": "Nome do exercício ou atividade (Ex: Supino Reto, Corrida na Esteira, Natação)"},
-        "tipo": {"type": "string", "enum": ["forca", "cardio", "endurance", "flexibilidade"]},
-        "periodo": {"type": "string", "enum": ["unico", "manha", "tarde", "noite"]},
-        "bloco": {"type": "string", "description": "Opcional: aquecimento, principal, finalizador, acessório"},
-        "series": {"type": "string", "description": "Número de séries (Ex: 4)"},
-        "reps": {"type": "string", "description": "Repetições ou tempo (Ex: 10-12 ou 45 seg)"},
-        "descanso": {"type": "string", "description": "Intervalo entre séries (Ex: 90s, 2min)"},
-        "rpe": {"type": "string", "description": "Percepção de esforço (Ex: RPE 7-8)"},
-        "distancia": {"type": "string", "description": "Para cardios (Ex: 5, 500, 2.5)"},
-        "unidade": {"type": "string", "enum": ["km", "m", "min", "reps"], "description": "Unidade da distância ou volume"},
-        "detalhes": {"type": "string", "description": "Dicas técnicas, cadência, carga sugerida ou progressão"}
+        "exercicio":  {"type": "string", "description": "Nome completo do exercício"},
+        "tipo":       {"type": "string", "enum": ["forca", "cardio", "endurance", "flexibilidade"]},
+        "periodo":    {"type": "string", "enum": ["unico", "manha", "tarde", "noite"]},
+        "bloco":      {"type": "string", "description": "Ex: A, B, C, Upper, Lower, Cardio"},
+        "series":     {"type": "string", "description": "Número de séries (força) ou repetições do bloco (cardio)"},
+        "reps":       {"type": "string", "description": "Repetições por série ou pace/tempo alvo"},
+        "descanso":   {"type": "string", "description": "Tempo de descanso em segundos entre séries"},
+        "rpe":        {"type": "string", "description": "Escala de esforço percebido 1-10"},
+        "distancia":  {"type": "string", "description": "Distância total (ex: 400, 1600, 5)"},
+        "unidade":    {"type": "string", "enum": ["km", "m", "min", "reps"]},
+        "detalhes":   {
+            "type": "string",
+            "description": "Para cardio/endurance: OBRIGATÓRIO detalhar estrutura completa. Ex: '6x300m com 90s de descanso entre tiros. Pace alvo: 85-90% FCmax. Aquecimento: 800m leve. Desaquecimento: 400m caminhada.' Para força: cadência, técnica, observações."
+        },
+        "estrutura_cardio": {
+            "type": "string",
+            "description": "APENAS para cardio/endurance: descreve o protocolo completo em formato estruturado. Ex: 'Aquecimento: 10min leve → 6x400m (pace 5k) c/ 2min descanso → Desaquecimento: 5min caminhada'"
+        }
     },
     "required": ["exercicio", "tipo", "periodo"]
 }
+
+_DIA_TREINO_DESC = (
+    "Mínimo 5 exercícios de força por dia de musculação. Em dias híbridos (força + cardio), "
+    "inclua os exercícios de força completos (mínimo 5) MAIS os exercícios de cardio separadamente. "
+    "NUNCA substitua exercícios de força por cardio. Dias de descanso: array vazio []."
+)
 
 TOOLS_AURA = [
     {
@@ -81,19 +94,19 @@ TOOLS_AURA = [
         "type": "function",
         "function": {
             "name": "salvar_novo_treino",
-            "description": "CRIA um cronograma SEMANAL ROBUSTO e EXTENSO. Use de 5 a 15+ exercícios por dia quando o protocolo exigir volume ou complexidade (periodizações avançadas, blocos híbridos, etc.). Deve integrar Musculação com os esportes favoritos do atleta (Corrida, Ciclismo, etc). Inclua aquecimento, bloco principal e finalizador quando relevante.",
+            "description": "CRIA um cronograma SEMANAL ROBUSTO e EXTENSO. Use de 5 a 15+ exercícios por dia quando o protocolo exigir volume ou complexidade (periodizações avançadas, blocos híbridos, etc.). Deve integrar Musculação com os esportes favoritos do atleta (Corrida, Ciclismo, etc). Inclua aquecimento, bloco principal e finalizador quando relevante. Mínimo 5 exercícios de força por dia de musculação. Em dias híbridos (força + cardio), inclua os exercícios de força completos (mínimo 5) MAIS os exercícios de cardio separadamente. NUNCA substitua exercícios de força por cardio.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "foco_atual": {"type": "string", "description": "Ex: Hipertrofia com foco em Endurance"},
                     "dicas_tecnicas": {"type": "string", "description": "Conselhos gerais para a semana"},
-                    "segunda": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "terca": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "quarta": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "quinta": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "sexta": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "sabado": {"type": "array", "items": SCHEMA_EXERCICIO},
-                    "domingo": {"type": "array", "items": SCHEMA_EXERCICIO}
+                    "segunda": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "terca": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "quarta": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "quinta": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "sexta": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "sabado": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC},
+                    "domingo": {"type": "array", "items": SCHEMA_EXERCICIO, "description": _DIA_TREINO_DESC}
                 },
                 "required": ["foco_atual", "segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
             }
@@ -164,7 +177,19 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             f"- Upper/Lower: Upper=Peito+Costas+Ombros+Braços, Lower=Quadril+Posterior+Panturrilha+Core\n"
             f"- Sempre preencha os campos: series, reps, descanso, rpe, detalhes para cada exercício\n"
             f"- Dias de descanso SEMPRE como array vazio []\n"
-            f"- NUNCA truncar o JSON — todos os 7 dias devem estar completos"
+            f"- NUNCA truncar o JSON — todos os 7 dias devem estar completos\n\n"
+            f"REGRAS DE DETALHAMENTO POR MODALIDADE:\n\n"
+            f"🏃 CORRIDA/CICLISMO/NATAÇÃO (tipo: endurance/cardio):\n"
+            f"- SEMPRE preencher campo 'detalhes' com: aquecimento + protocolo principal (séries x distância + descanso) + desaquecimento + pace/intensidade alvo\n"
+            f"- SEMPRE preencher 'estrutura_cardio' com o protocolo resumido\n"
+            f"- Exemplo corrida: exercicio=\"Tiros de Lactato\", detalhes=\"Aquecimento: 1000m leve (pace confortável). Principal: 6x300m pace máximo sustentável (RPE 9) com 90s de caminhada entre tiros. Desaquecimento: 400m caminhada + alongamento 5min.\", estrutura_cardio=\"Aq. 1km → 6×300m (RPE9) / 90s → 5min walk\"\n\n"
+            f"🏋️ MUSCULAÇÃO/ACADEMIA (tipo: forca):\n"
+            f"- Mínimo 5 exercícios por sessão de força\n"
+            f"- Sempre preencher: series, reps, descanso, rpe\n"
+            f"- Em dias híbridos: manter os 5+ exercícios de força E adicionar o cardio separadamente\n\n"
+            f"🥊 BOXE/ESPORTES COLETIVOS/OUTROS:\n"
+            f"- Apenas título + detalhes básicos da sessão\n"
+            f"- Não precisa de series/reps detalhados"
         )
     }
 
