@@ -157,7 +157,14 @@ def processar_comando(user_id: str, mensagem: str) -> str:
             f"2. TREINOS NATIVOS: Planilhas semanais devem ser densas e extensas quando necessário (5 a 15+ exercícios/dia). Priorize volume, progressão e detalhamento técnico (séries, reps, carga, descanso, RPE). Se o plano for 'FREE', incentive o upgrade para o plano PRO para protocolos ilimitados.\n"
             f"3. LOGÍSTICA INTEGRADA: O Mercado Aura possui entrega em todo o Brasil. Informe que o cálculo de frete (Melhor Envio) é feito em tempo real no checkout.\n"
             f"4. TOOLS: Sempre use tools para salvar Treinos e Dietas. Após salvar, responda: 'Protocolo atualizado! Verifique a aba correspondente acima.'\n"
-            f"5. PRIVACIDADE: Se questionado, confirme que os dados de biometria são criptografados e seguem a Política de Privacidade nativa do app."
+            f"5. PRIVACIDADE: Se questionado, confirme que os dados de biometria são criptografados e seguem a Política de Privacidade nativa do app.\n\n"
+            f"REGRA CRÍTICA PARA TREINOS: Quando gerar um plano semanal, OBRIGATORIAMENTE inclua:\n"
+            f"- Mínimo 5 exercícios por dia de treino (nunca menos)\n"
+            f"- Estrutura ABC correta: Dia A=Peito+Tríceps+Ombro, Dia B=Costas+Bíceps, Dia C=Pernas+Core\n"
+            f"- Upper/Lower: Upper=Peito+Costas+Ombros+Braços, Lower=Quadril+Posterior+Panturrilha+Core\n"
+            f"- Sempre preencha os campos: series, reps, descanso, rpe, detalhes para cada exercício\n"
+            f"- Dias de descanso SEMPRE como array vazio []\n"
+            f"- NUNCA truncar o JSON — todos os 7 dias devem estar completos"
         )
     }
 
@@ -169,13 +176,20 @@ def processar_comando(user_id: str, mensagem: str) -> str:
     try:
         if client is None: return "⚠️ O Mestre está em meditação profunda (Sistema Offline)."
 
+        # Detecta se é pedido de treino ou dieta
+        eh_pedido_estruturado = any(p in mensagem.lower() for p in [
+            "treino", "treinar", "exercício", "exercicio", "musculação", "musculacao",
+            "academia", "dieta", "alimentação", "alimentacao", "protocolo", "plano",
+            "semana", "segunda", "terca", "quarta", "quinta", "sexta", "sábado", "sabado"
+        ])
+
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=mensagens,
             tools=TOOLS_AURA,
-            tool_choice="auto",
+            tool_choice="required" if eh_pedido_estruturado else "auto",
             temperature=0.6,
-            max_tokens=2048,
+            max_tokens=4096,
             parallel_tool_calls=False,
         )
         
