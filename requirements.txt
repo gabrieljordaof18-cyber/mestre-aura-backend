@@ -27,3 +27,4 @@ python-jose[cryptography]==3.3.0
 # --- TIPAGEM E SEGURANÇA ---
 pydantic==2.12.4
 email-validator
+sendgrid==6.11.0

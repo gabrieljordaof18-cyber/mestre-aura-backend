@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 import concurrent.futures
 import requests
 import jwt
@@ -298,6 +299,100 @@ def login_usuario():
     except Exception as e:
         logger.error(f"Erro no login: {e}")
         return jsonify({"erro": "Falha interna no login"}), 500
+
+
+@api_bp.route('/auth/forgot-password', methods=['POST', 'OPTIONS'])
+def forgot_password():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+    try:
+        dados = request.get_json(force=True) or {}
+        email = dados.get('email', '').strip().lower()
+        if not email:
+            return jsonify({"erro": "E-mail obrigatório"}), 400
+
+        usuario = buscar_usuario_por_email(email)
+        if not usuario:
+            return jsonify({"sucesso": True, "mensagem": "Se o e-mail existir, você receberá as instruções."})
+
+        token_reset = str(secrets.randbelow(900000) + 100000)
+        expiry = (datetime.utcnow() + timedelta(minutes=15)).isoformat()
+
+        atualizar_usuario(str(usuario["_id"]), {
+            "reset_token": token_reset,
+            "reset_token_expiry": expiry
+        })
+
+        sendgrid_key = os.getenv("SENDGRID_API_KEY")
+        if sendgrid_key:
+            try:
+                from sendgrid import SendGridAPIClient
+                from sendgrid.helpers.mail import Mail
+                msg = Mail(
+                    from_email=os.getenv("EMAIL_FROM", "noreply@auraperformance.app"),
+                    to_emails=email,
+                    subject="🔑 Código de redefinição — AURA Performance",
+                    html_content=f"""
+                    <div style="font-family:sans-serif;max-width:400px;margin:0 auto;background:#000;color:#fff;padding:40px;border-radius:16px;">
+                        <h1 style="color:#FFD700;font-size:24px;margin-bottom:8px;">AURA Performance</h1>
+                        <p style="color:#aaa;margin-bottom:24px;">Recebemos uma solicitação para redefinir sua senha.</p>
+                        <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px;">
+                            <p style="color:#aaa;font-size:12px;margin-bottom:8px;text-transform:uppercase;letter-spacing:2px;">Seu código</p>
+                            <h2 style="color:#FFD700;font-size:40px;letter-spacing:8px;margin:0;">{token_reset}</h2>
+                        </div>
+                        <p style="color:#666;font-size:12px;">Este código expira em 15 minutos. Se não foi você, ignore este e-mail.</p>
+                    </div>
+                    """
+                )
+                sg = SendGridAPIClient(sendgrid_key)
+                sg.send(msg)
+            except Exception as e:
+                logger.error(f"Erro ao enviar email reset: {e}")
+
+        return jsonify({"sucesso": True, "mensagem": "Se o e-mail existir, você receberá as instruções."})
+    except Exception as e:
+        logger.error(f"Erro forgot-password: {e}")
+        return jsonify({"erro": "Falha interna"}), 500
+
+
+@api_bp.route('/auth/reset-password', methods=['POST', 'OPTIONS'])
+def reset_password():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+    try:
+        dados = request.get_json(force=True) or {}
+        email = dados.get('email', '').strip().lower()
+        token = dados.get('token', '').strip()
+        nova_senha = dados.get('nova_senha', '')
+
+        if not email or not token or not nova_senha:
+            return jsonify({"erro": "Todos os campos são obrigatórios"}), 400
+        if len(nova_senha) < 6:
+            return jsonify({"erro": "Senha deve ter ao menos 6 caracteres"}), 400
+
+        usuario = buscar_usuario_por_email(email)
+        if not usuario:
+            return jsonify({"erro": "Código inválido ou expirado"}), 400
+
+        reset_token = usuario.get('reset_token', '')
+        reset_expiry = usuario.get('reset_token_expiry', '')
+
+        if reset_token != token:
+            return jsonify({"erro": "Código inválido ou expirado"}), 400
+
+        if reset_expiry and datetime.utcnow() > datetime.fromisoformat(reset_expiry):
+            return jsonify({"erro": "Código expirado. Solicite um novo."}), 400
+
+        atualizar_usuario(str(usuario["_id"]), {
+            "senha_hash": generate_password_hash(nova_senha),
+            "reset_token": None,
+            "reset_token_expiry": None
+        })
+
+        return jsonify({"sucesso": True, "mensagem": "Senha redefinida com sucesso!"})
+    except Exception as e:
+        logger.error(f"Erro reset-password: {e}")
+        return jsonify({"erro": "Falha interna"}), 500
 
 # ===================================================
 # 👤 STATUS E PROGRESSÃO (MULTIJOGADOR + IAP READY)
