@@ -190,6 +190,7 @@ _PEDIDOS_TEMPLATE = """<!DOCTYPE html>
     <div style="display:flex;align-items:center;gap:12px">
       <a href="/admin/pedidos" style="font-size:12px;color:#FFD700;font-weight:700;padding:5px 12px;border:1px solid rgba(255,215,0,.3);border-radius:8px;text-decoration:none">Pedidos</a>
       <a href="/admin/profissionais" style="font-size:12px;color:#9ca3af;font-weight:600;padding:5px 12px;border:1px solid #374151;border-radius:8px;text-decoration:none" onmouseover="this.style.color='#FFD700'" onmouseout="this.style.color='#9ca3af'">Profissionais</a>
+      <a href="/admin/verificacoes" style="font-size:12px;color:#9ca3af;font-weight:600;padding:5px 12px;border:1px solid #374151;border-radius:8px;text-decoration:none" onmouseover="this.style.color='#60a5fa'" onmouseout="this.style.color='#9ca3af'">Verificações</a>
       <span style="font-size:11px;color:#6b7280">{{ pedidos|length }} pedido(s)</span>
       <a href="/admin/logout"
         style="font-size:11px;color:#9ca3af;padding:6px 14px;border:1px solid #374151;border-radius:8px;text-decoration:none;transition:color .15s"
@@ -502,6 +503,7 @@ _PROFISSIONAIS_TEMPLATE = """
       <span class="text-yellow-400 font-black text-xl">AURA Admin</span>
       <a href="/admin/pedidos" class="text-gray-400 hover:text-white text-sm">Pedidos</a>
       <a href="/admin/profissionais" class="text-yellow-400 font-bold text-sm border-b border-yellow-400">Profissionais</a>
+      <a href="/admin/verificacoes" class="text-gray-400 hover:text-blue-400 text-sm">Verificações</a>
     </div>
     <a href="/admin/logout" class="text-gray-500 hover:text-red-400 text-sm">Sair</a>
   </nav>
@@ -574,6 +576,109 @@ _PROFISSIONAIS_TEMPLATE = """
             </button>
           </form>
           <form method="POST" action="/admin/profissionais/{{ p.user_id }}/rejeitar">
+            <button type="submit" class="bg-red-500/10 text-red-400 border border-red-500/20 font-bold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500/20 transition-all">
+              ❌ Rejeitar
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
+"""
+
+
+# ===================================================
+# TEMPLATE — VERIFICAÇÕES
+# ===================================================
+
+_VERIFICACOES_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURA Admin — Verificações</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+  <nav class="bg-black border-b border-yellow-500/20 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <span class="text-yellow-400 font-black text-xl">AURA Admin</span>
+      <a href="/admin/pedidos" class="text-gray-400 hover:text-white text-sm">Pedidos</a>
+      <a href="/admin/profissionais" class="text-gray-400 hover:text-white text-sm">Profissionais</a>
+      <a href="/admin/verificacoes" class="text-yellow-400 font-bold text-sm border-b border-yellow-400">Verificações</a>
+    </div>
+    <a href="/admin/logout" class="text-gray-500 hover:text-red-400 text-sm">Sair</a>
+  </nav>
+
+  <div class="max-w-5xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-black">Verificações Pendentes</h1>
+      <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full text-sm font-bold">
+        {{ verificacoes|length }} pendente(s)
+      </span>
+    </div>
+
+    {% if request.args.get('msg') == 'aprovado' %}
+    <div class="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl mb-4">✅ Credenciais verificadas com sucesso!</div>
+    {% elif request.args.get('msg') == 'rejeitado' %}
+    <div class="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4">❌ Verificação rejeitada.</div>
+    {% endif %}
+
+    {% if not verificacoes %}
+    <div class="text-center py-20 text-gray-600">
+      <p class="text-4xl mb-3">✅</p>
+      <p class="text-lg font-bold">Nenhuma verificação pendente</p>
+    </div>
+    {% else %}
+    <div class="space-y-4">
+      {% for p in verificacoes %}
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-blue-400 font-black text-lg">{{ p.nome_usuario }}</span>
+              <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full text-xs font-bold uppercase">{{ p.tipo_profissional }}</span>
+              <span class="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full text-xs font-bold">AGUARDANDO ANÁLISE</span>
+            </div>
+            <p class="text-gray-400 text-sm">{{ p.email_usuario }}</p>
+            <p class="text-gray-600 text-xs mt-1">ID: {{ p.id_curto }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div class="bg-gray-800/50 rounded-xl p-4">
+            <p class="text-gray-500 text-xs uppercase font-bold mb-2">Nome Completo</p>
+            <p class="text-gray-200 text-sm font-mono">{{ p.verificacao_nome_completo or 'Não informado' }}</p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4">
+            <p class="text-gray-500 text-xs uppercase font-bold mb-2">CPF / RG</p>
+            <p class="text-gray-200 text-sm font-mono">{{ p.verificacao_documento or 'Não informado' }}</p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4">
+            <p class="text-gray-500 text-xs uppercase font-bold mb-2">CREF / CRM / CRN</p>
+            <p class="text-gray-200 text-sm font-mono">{{ p.verificacao_codigo_profissional or 'Não informado' }}</p>
+          </div>
+        </div>
+
+        {% if p.cref_crn_crm %}
+        <div class="bg-gray-800/30 rounded-xl p-3 mb-4">
+          <p class="text-gray-500 text-xs uppercase font-bold mb-1">Registro declarado no cadastro</p>
+          <p class="text-gray-300 text-sm font-mono">{{ p.cref_crn_crm }}</p>
+        </div>
+        {% endif %}
+
+        <div class="flex gap-3 pt-4 border-t border-gray-800">
+          <form method="POST" action="/admin/verificacoes/{{ p.user_id }}/aprovar">
+            <button type="submit" class="bg-blue-500 text-white font-black px-6 py-2.5 rounded-xl text-sm hover:bg-blue-400 transition-all">
+              ✅ Aprovar Verificação
+            </button>
+          </form>
+          <form method="POST" action="/admin/verificacoes/{{ p.user_id }}/rejeitar">
             <button type="submit" class="bg-red-500/10 text-red-400 border border-red-500/20 font-bold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500/20 transition-all">
               ❌ Rejeitar
             </button>
@@ -854,4 +959,74 @@ def rejeitar_profissional(user_id):
         return redirect("/admin/profissionais?msg=rejeitado")
     except Exception as e:
         logger.error(f"Erro ao rejeitar profissional {user_id}: {e}")
+        return f"Erro: {e}", 500
+
+
+# ===================================================
+# ROTAS — VERIFICAÇÕES DE CREDENCIAIS
+# ===================================================
+
+@admin_bp.route("/verificacoes")
+@_admin_required
+def admin_verificacoes():
+    try:
+        pendentes = list(mongo_db["profissionais"].find(
+            {"status_verificacao": "aguardando_analise"}
+        ).sort("updated_at", -1).limit(100))
+
+        for p in pendentes:
+            p["_id_str"] = str(p["_id"])
+            p["id_curto"] = str(p["_id"])[-8:].upper()
+            try:
+                usuario = mongo_db["usuarios"].find_one({"_id": ObjectId(p["user_id"])})
+                p["nome_usuario"] = usuario.get("nome", "N/A") if usuario else "N/A"
+                p["email_usuario"] = usuario.get("email", "N/A") if usuario else "N/A"
+            except Exception:
+                p["nome_usuario"] = "N/A"
+                p["email_usuario"] = "N/A"
+
+        return render_template_string(_VERIFICACOES_TEMPLATE, verificacoes=pendentes)
+    except Exception as e:
+        return f"Erro: {e}", 500
+
+
+@admin_bp.route("/verificacoes/<user_id>/aprovar", methods=["POST"])
+@_admin_required
+def aprovar_verificacao(user_id):
+    try:
+        mongo_db["profissionais"].update_one(
+            {"user_id": user_id},
+            {"$set": {"status_verificacao": "verificado", "verificado": True}}
+        )
+        mongo_db["notificacoes"].insert_one({
+            "user_id": user_id,
+            "tipo": "sistema",
+            "mensagem": "✅ Suas credenciais foram verificadas! Você agora tem o selo de verificado na AURA.",
+            "meta": {"acao": "credenciais_verificadas"},
+            "lida": False,
+            "created_at": datetime.now().isoformat()
+        })
+        return redirect("/admin/verificacoes?msg=aprovado")
+    except Exception as e:
+        return f"Erro: {e}", 500
+
+
+@admin_bp.route("/verificacoes/<user_id>/rejeitar", methods=["POST"])
+@_admin_required
+def rejeitar_verificacao(user_id):
+    try:
+        mongo_db["profissionais"].update_one(
+            {"user_id": user_id},
+            {"$set": {"status_verificacao": "pendente", "verificacao_paga": False}}
+        )
+        mongo_db["notificacoes"].insert_one({
+            "user_id": user_id,
+            "tipo": "sistema",
+            "mensagem": "⚠️ Suas credenciais não foram verificadas. Entre em contato com o suporte.",
+            "meta": {"acao": "credenciais_rejeitadas"},
+            "lida": False,
+            "created_at": datetime.now().isoformat()
+        })
+        return redirect("/admin/verificacoes?msg=rejeitado")
+    except Exception as e:
         return f"Erro: {e}", 500

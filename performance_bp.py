@@ -133,6 +133,8 @@ def solicitar_profissional(current_user_id):
             "especialidades": list(dados.get("especialidades", [])),
             "cref_crn_crm": cref,
             "foto_perfil_url": str(dados.get("foto_perfil_url", "")).strip(),
+            "instagram": str(dados.get("instagram", "")).strip().replace("@", ""),
+            "nome_completo": str(dados.get("nome_completo", "")).strip(),
         })
 
         mongo_db["profissionais"].insert_one(doc)
@@ -207,55 +209,97 @@ def atualizar_meu_perfil(current_user_id):
 def solicitar_verificacao(current_user_id):
     """
     Profissional solicita verificação de credenciais.
-    Cria cobrança de R$99,90 via Asaas. Quando pago (webhook),
-    o campo verificacao_paga é marcado como True.
+    Cria cobrança PIX de R$99,90 via Asaas.
     """
     try:
         if mongo_db is None:
             return jsonify({"erro": "Banco indisponível"}), 500
 
-        prof = _obter_profissional(current_user_id)
-        if not prof:
+        profissional = mongo_db["profissionais"].find_one({"user_id": current_user_id})
+        if not profissional:
             return jsonify({"erro": "Perfil profissional não encontrado"}), 404
+        if profissional.get("verificacao_paga"):
+            return jsonify({"erro": "Verificação já solicitada"}), 409
 
-        if prof.get("verificacao_paga"):
-            return jsonify({"erro": "Verificação já foi paga. Análise em andamento."}), 409
+        usuario = mongo_db["usuarios"].find_one({"_id": ObjectId(current_user_id)})
+        nome = usuario.get("nome", "Profissional AURA") if usuario else "Profissional AURA"
+        email = usuario.get("email", "") if usuario else ""
 
-        memoria = carregar_memoria(current_user_id) or {}
-        dados_pag = {
-            "user_id": current_user_id,
-            "usuario": {
-                "nome":     memoria.get("nome", "Profissional"),
-                "email":    memoria.get("email", ""),
-                "cpf":      memoria.get("cpf", ""),
-                "telefone": memoria.get("telefone", ""),
-            },
-            "valor": 99.90,
-            "valor_produtos": 99.90,
-            "valor_frete": 0,
-            "metodo": "pix",
-            "descricao": "Verificação de Credenciais Profissionais AURA",
-            "tipo": "verificacao_profissional",
-            "itens": [{"nome": "Verificação CREF/CRN/CRM", "valor": 99.90}],
-        }
+        import requests as req
+        asaas_key = os.getenv("ASAAS_ACCESS_TOKEN")
+        headers = {"access_token": asaas_key, "Content-Type": "application/json"}
 
-        resultado = criar_cobranca(dados_pag)
-        if "erro" in resultado:
-            return jsonify(resultado), 400
+        customer_resp = req.post("https://api.asaas.com/v3/customers", headers=headers, json={
+            "name": nome, "email": email
+        }, timeout=10)
+        customer_id = customer_resp.json().get("id")
 
-        # Salva o payment_id para cruzar com o webhook
+        cobranca = req.post("https://api.asaas.com/v3/payments", headers=headers, json={
+            "customer": customer_id,
+            "billingType": "PIX",
+            "value": 99.90,
+            "dueDate": (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d"),
+            "description": "Verificação de Credenciais AURA Performance",
+            "externalReference": f"verificacao_{current_user_id}",
+        }, timeout=10)
+        dados_cobranca = cobranca.json()
+
+        mongo_db["profissionais"].update_one(
+            {"user_id": current_user_id},
+            {"$set": {"verificacao_paga": True, "verificacao_payment_id": dados_cobranca.get("id")}}
+        )
+
+        return jsonify({
+            "sucesso": True,
+            "tipo": "pix",
+            "payment_id": dados_cobranca.get("id"),
+            "pix_copia_cola": dados_cobranca.get("pixTransaction", {}).get("payload"),
+            "valor": 99.90
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro solicitar_verificacao: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@performance_bp.route("/enviar_documentos_verificacao", methods=["POST"])
+@_token_required
+def enviar_documentos_verificacao(current_user_id):
+    """Profissional envia documentos para análise de verificação."""
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+
+        dados = request.get_json(force=True)
+        nome_completo = str(dados.get("nome_completo", "")).strip()
+        documento = str(dados.get("documento", "")).strip()
+        codigo_profissional = str(dados.get("codigo_profissional", "")).strip()
+
+        if not nome_completo or not documento or not codigo_profissional:
+            return jsonify({"erro": "Todos os campos são obrigatórios"}), 400
+
         mongo_db["profissionais"].update_one(
             {"user_id": current_user_id},
             {"$set": {
-                "asaas_verificacao_id": resultado["id_pagamento"],
+                "verificacao_nome_completo": nome_completo,
+                "verificacao_documento": documento,
+                "verificacao_codigo_profissional": codigo_profissional,
+                "status_verificacao": "aguardando_analise",
                 "updated_at": datetime.now().isoformat()
             }}
         )
 
-        return jsonify(resultado), 200
+        mongo_db["notificacoes_admin"].insert_one({
+            "tipo": "verificacao_profissional",
+            "user_id": current_user_id,
+            "dados": {"nome": nome_completo, "documento": documento, "codigo": codigo_profissional},
+            "lida": False,
+            "created_at": datetime.now().isoformat()
+        })
 
+        return jsonify({"sucesso": True, "mensagem": "Documentos enviados! Analisaremos em até 48h."}), 200
     except Exception as e:
-        logger.error(f"[PERF] Erro solicitar_verificacao: {e}")
+        logger.error(f"[PERF] Erro enviar_documentos_verificacao: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
