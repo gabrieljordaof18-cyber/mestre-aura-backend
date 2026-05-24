@@ -815,6 +815,14 @@ def aprovar_profissional(user_id):
             {"_id": ObjectId(user_id)},
             {"$set": {"tipo_perfil": "profissional"}}
         )
+        mongo_db["notificacoes"].insert_one({
+            "user_id": user_id,
+            "tipo": "sistema",
+            "mensagem": "🎉 Parabéns! Seu cadastro profissional foi aprovado! Agora você pode criar desafios e atender alunos na AURA.",
+            "meta": {"acao": "profissional_aprovado"},
+            "lida": False,
+            "created_at": datetime.now().isoformat()
+        })
         logger.info(f"✅ Profissional {user_id} aprovado.")
         return redirect("/admin/profissionais?msg=aprovado")
     except Exception as e:
@@ -834,6 +842,14 @@ def rejeitar_profissional(user_id):
             {"_id": ObjectId(user_id)},
             {"$set": {"tipo_perfil": "atleta"}}
         )
+        mongo_db["notificacoes"].insert_one({
+            "user_id": user_id,
+            "tipo": "sistema",
+            "mensagem": "⚠️ Seu cadastro profissional não foi aprovado desta vez. Verifique suas informações e tente novamente.",
+            "meta": {"acao": "profissional_rejeitado"},
+            "lida": False,
+            "created_at": datetime.now().isoformat()
+        })
         logger.info(f"❌ Profissional {user_id} rejeitado.")
         return redirect("/admin/profissionais?msg=rejeitado")
     except Exception as e:

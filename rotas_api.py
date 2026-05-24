@@ -480,6 +480,8 @@ def get_status_jogador(current_user_id):
             "xp_dobrado_expira_em": dados.get("xp_dobrado_expira_em", ""),
             # Cupons comprados no Laboratório
             "cupons_ativos":      dados.get("cupons_ativos", []),
+            # Perfil profissional
+            "tipo_perfil":        dados.get("tipo_perfil", "atleta"),
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
