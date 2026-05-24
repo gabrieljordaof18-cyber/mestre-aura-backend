@@ -188,7 +188,9 @@ _PEDIDOS_TEMPLATE = """<!DOCTYPE html>
       <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;margin-left:10px">Performance OS &middot; Admin</span>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
-      <span style="font-size:11px;color:#6b7280">{{ pedidos|length }} pedido(s) encontrado(s)</span>
+      <a href="/admin/pedidos" style="font-size:12px;color:#FFD700;font-weight:700;padding:5px 12px;border:1px solid rgba(255,215,0,.3);border-radius:8px;text-decoration:none">Pedidos</a>
+      <a href="/admin/profissionais" style="font-size:12px;color:#9ca3af;font-weight:600;padding:5px 12px;border:1px solid #374151;border-radius:8px;text-decoration:none" onmouseover="this.style.color='#FFD700'" onmouseout="this.style.color='#9ca3af'">Profissionais</a>
+      <span style="font-size:11px;color:#6b7280">{{ pedidos|length }} pedido(s)</span>
       <a href="/admin/logout"
         style="font-size:11px;color:#9ca3af;padding:6px 14px;border:1px solid #374151;border-radius:8px;text-decoration:none;transition:color .15s"
         onmouseover="this.style.color='#FFD700'" onmouseout="this.style.color='#9ca3af'">
@@ -482,6 +484,112 @@ function copiarMensagem() {
 
 
 # ===================================================
+# TEMPLATE — PROFISSIONAIS PENDENTES
+# ===================================================
+
+_PROFISSIONAIS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURA Admin — Profissionais</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+  <nav class="bg-black border-b border-yellow-500/20 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <span class="text-yellow-400 font-black text-xl">AURA Admin</span>
+      <a href="/admin/pedidos" class="text-gray-400 hover:text-white text-sm">Pedidos</a>
+      <a href="/admin/profissionais" class="text-yellow-400 font-bold text-sm border-b border-yellow-400">Profissionais</a>
+    </div>
+    <a href="/admin/logout" class="text-gray-500 hover:text-red-400 text-sm">Sair</a>
+  </nav>
+
+  <div class="max-w-5xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-black">Profissionais Pendentes</h1>
+      <span class="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-3 py-1 rounded-full text-sm font-bold">
+        {{ profissionais|length }} pendente(s)
+      </span>
+    </div>
+
+    {% if request.args.get('msg') == 'aprovado' %}
+    <div class="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl mb-4">✅ Profissional aprovado com sucesso!</div>
+    {% elif request.args.get('msg') == 'rejeitado' %}
+    <div class="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4">❌ Profissional rejeitado.</div>
+    {% endif %}
+
+    {% if not profissionais %}
+    <div class="text-center py-20 text-gray-600">
+      <p class="text-4xl mb-3">✅</p>
+      <p class="text-lg font-bold">Nenhum profissional pendente</p>
+    </div>
+    {% else %}
+    <div class="space-y-4">
+      {% for p in profissionais %}
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-yellow-400 font-black text-lg">{{ p.nome_usuario }}</span>
+              <span class="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full text-xs font-bold uppercase">{{ p.tipo_profissional }}</span>
+              <span class="bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-full text-xs font-bold">PENDENTE</span>
+            </div>
+            <p class="text-gray-400 text-sm">{{ p.email_usuario }}</p>
+            <p class="text-gray-600 text-xs mt-1">ID: {{ p.id_curto }} • {{ p.data_fmt }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-gray-800/50 rounded-xl p-4">
+            <p class="text-gray-500 text-xs uppercase font-bold mb-2">Bio</p>
+            <p class="text-gray-200 text-sm">{{ p.bio or 'Não informado' }}</p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4">
+            <p class="text-gray-500 text-xs uppercase font-bold mb-2">Registro Profissional</p>
+            <p class="text-gray-200 text-sm font-mono">{{ p.cref_crn_crm or 'Não informado' }}</p>
+            {% if p.instagram %}
+            <p class="text-gray-500 text-xs uppercase font-bold mt-3 mb-1">Instagram</p>
+            <p class="text-blue-400 text-sm">@{{ p.instagram }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if p.especialidades %}
+        <div class="mb-4">
+          <p class="text-gray-500 text-xs uppercase font-bold mb-2">Especialidades</p>
+          <div class="flex flex-wrap gap-2">
+            {% for esp in p.especialidades %}
+            <span class="bg-gray-800 text-gray-300 px-3 py-1 rounded-full text-xs">{{ esp }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="flex gap-3 pt-4 border-t border-gray-800">
+          <form method="POST" action="/admin/profissionais/{{ p.user_id }}/aprovar">
+            <button type="submit" class="bg-yellow-400 text-black font-black px-6 py-2.5 rounded-xl text-sm hover:bg-yellow-300 transition-all">
+              ✅ Aprovar
+            </button>
+          </form>
+          <form method="POST" action="/admin/profissionais/{{ p.user_id }}/rejeitar">
+            <button type="submit" class="bg-red-500/10 text-red-400 border border-red-500/20 font-bold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500/20 transition-all">
+              ❌ Rejeitar
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
+"""
+
+
+# ===================================================
 # ROTAS — AUTH
 # ===================================================
 
@@ -659,3 +767,75 @@ def marcar_entregue(pedido_id):
     except Exception as e:
         logger.error(f"Erro ao marcar pedido {pedido_id} como entregue: {e}")
     return redirect("/admin/pedidos")
+
+
+# ===================================================
+# ROTAS — PROFISSIONAIS
+# ===================================================
+
+@admin_bp.route("/profissionais")
+@_admin_required
+def admin_profissionais():
+    try:
+        pendentes = list(mongo_db["profissionais"].find(
+            {"status_verificacao": {"$in": ["pendente", "pending", None]}}
+        ).sort("created_at", -1).limit(200))
+
+        for p in pendentes:
+            p["_id_str"] = str(p["_id"])
+            p["id_curto"] = str(p["_id"])[-8:].upper()
+            try:
+                usuario = mongo_db["usuarios"].find_one({"_id": ObjectId(p["user_id"])})
+                p["nome_usuario"] = usuario.get("nome", "N/A") if usuario else "N/A"
+                p["email_usuario"] = usuario.get("email", "N/A") if usuario else "N/A"
+            except Exception:
+                p["nome_usuario"] = "N/A"
+                p["email_usuario"] = "N/A"
+            try:
+                dt = datetime.fromisoformat(p.get("created_at", ""))
+                p["data_fmt"] = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                p["data_fmt"] = p.get("created_at", "")[:10]
+
+        return render_template_string(_PROFISSIONAIS_TEMPLATE, profissionais=pendentes)
+    except Exception as e:
+        logger.error(f"Erro ao listar profissionais pendentes: {e}")
+        return f"Erro: {e}", 500
+
+
+@admin_bp.route("/profissionais/<user_id>/aprovar", methods=["POST"])
+@_admin_required
+def aprovar_profissional(user_id):
+    try:
+        mongo_db["profissionais"].update_one(
+            {"user_id": user_id},
+            {"$set": {"status_verificacao": "aprovado", "verificado": True}}
+        )
+        mongo_db["usuarios"].update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"tipo_perfil": "profissional"}}
+        )
+        logger.info(f"✅ Profissional {user_id} aprovado.")
+        return redirect("/admin/profissionais?msg=aprovado")
+    except Exception as e:
+        logger.error(f"Erro ao aprovar profissional {user_id}: {e}")
+        return f"Erro: {e}", 500
+
+
+@admin_bp.route("/profissionais/<user_id>/rejeitar", methods=["POST"])
+@_admin_required
+def rejeitar_profissional(user_id):
+    try:
+        mongo_db["profissionais"].update_one(
+            {"user_id": user_id},
+            {"$set": {"status_verificacao": "rejeitado", "verificado": False}}
+        )
+        mongo_db["usuarios"].update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"tipo_perfil": "atleta"}}
+        )
+        logger.info(f"❌ Profissional {user_id} rejeitado.")
+        return redirect("/admin/profissionais?msg=rejeitado")
+    except Exception as e:
+        logger.error(f"Erro ao rejeitar profissional {user_id}: {e}")
+        return f"Erro: {e}", 500
