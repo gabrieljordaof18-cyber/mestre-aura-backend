@@ -71,8 +71,8 @@ def _obter_profissional(user_id: str):
     return mongo_db["profissionais"].find_one({"user_id": user_id})
 
 
-def _profissional_pode_criar(prof_doc: dict) -> bool:
-    """Verifica se o plano do profissional está ativo."""
+def _assinatura_prof_ativa(prof_doc: dict) -> bool:
+    """Retorna True se o profissional tem assinatura (trial ou IAP) válida e não expirada."""
     if not prof_doc:
         return False
     if not prof_doc.get("plano_ativo"):
@@ -81,6 +81,12 @@ def _profissional_pode_criar(prof_doc: dict) -> bool:
     if expira and datetime.fromisoformat(expira) < datetime.now():
         return False
     return True
+
+
+_ERRO_ASSINATURA = {"erro": "assinatura_expirada",
+                    "detalhe": "Sua assinatura profissional expirou. Renove para acessar este recurso."}
+_ERRO_CHAT_BLOQ  = {"erro": "profissional_indisponivel",
+                    "detalhe": "Este profissional está temporariamente indisponível para novas interações."}
 
 
 def _serializar(doc: dict) -> dict:
@@ -319,8 +325,8 @@ def criar_desafio(current_user_id):
         if not prof:
             return jsonify({"erro": "Perfil profissional não encontrado. Solicite cadastro primeiro."}), 403
 
-        if not _profissional_pode_criar(prof):
-            return jsonify({"erro": "Plano profissional expirado. Assine para continuar criando desafios."}), 403
+        if not _assinatura_prof_ativa(prof):
+            return jsonify(_ERRO_ASSINATURA), 403
 
         dados = request.get_json(force=True)
         preco = float(dados.get("preco", 0))
@@ -401,6 +407,10 @@ def editar_desafio(current_user_id, desafio_id):
         if desafio.get("profissional_id") != current_user_id:
             return jsonify({"erro": "Sem permissão"}), 403
 
+        prof = _obter_profissional(current_user_id)
+        if not _assinatura_prof_ativa(prof):
+            return jsonify(_ERRO_ASSINATURA), 403
+
         dados = request.get_json(force=True)
         campos_aceitos = {
             "titulo", "descricao", "tipo", "duracao_dias", "preco",
@@ -429,6 +439,10 @@ def inscritos_desafio(current_user_id, desafio_id):
         desafio = mongo_db["desafios"].find_one({"_id": ObjectId(desafio_id)})
         if not desafio or desafio.get("profissional_id") != current_user_id:
             return jsonify({"erro": "Sem permissão"}), 403
+
+        prof = _obter_profissional(current_user_id)
+        if not _assinatura_prof_ativa(prof):
+            return jsonify(_ERRO_ASSINATURA), 403
 
         cursor = mongo_db["inscricoes_desafio"].find({"desafio_id": desafio_id})
         inscritos = []
@@ -630,6 +644,13 @@ def inscrever_desafio(current_user_id, desafio_id):
         dados_req = request.get_json(force=True) or {}
         metodo = str(dados_req.get("metodo", "pix")).lower()
 
+        # [AURA NEW] Consentimento explícito de acesso a dados de saúde é obrigatório
+        # antes de qualquer cobrança — sem ele, nem a inscrição nem o pagamento avançam.
+        if dados_req.get("consentimento_aceito") is not True:
+            return jsonify({
+                "erro": "É necessário aceitar o termo de consentimento de acesso aos dados de saúde para se inscrever."
+            }), 400
+
         memoria = carregar_memoria(current_user_id) or {}
         valor_aura, valor_prof = _calc_split(preco)
 
@@ -643,6 +664,12 @@ def inscrever_desafio(current_user_id, desafio_id):
         doc_insc["valor_aura"]          = valor_aura
         doc_insc["valor_profissional"]  = valor_prof
         doc_insc["data_inicio"]         = desafio.get("data_inicio", "")
+        doc_insc["consentimento"] = {
+            "aceito":       True,
+            "versao_termo": str(dados_req.get("versao_termo", "v1")),
+            "aceito_em":    datetime.now().isoformat(),
+            "escopo":       ["peso", "altura", "percentual_gordura", "frequencia_treino", "treinos_completados"],
+        }
         ins_result = mongo_db["inscricoes_desafio"].insert_one(doc_insc)
         inscricao_id = str(ins_result.inserted_id)
 
@@ -733,13 +760,18 @@ def minhas_inscricoes(current_user_id):
 # ROTAS DE CHAT
 # ══════════════════════════════════════════════════════════════
 
+def _dupla_id(id1: str, id2: str) -> str:
+    """Chave canônica de um par de participantes (ordem alfabética)."""
+    a, b = sorted([str(id1), str(id2)])
+    return f"{a}_{b}"
+
+
 @performance_bp.route("/chat/<desafio_id>/mensagem", methods=["POST"])
 @_token_required
 def enviar_mensagem(current_user_id, desafio_id):
     """
-    Envia mensagem no chat do desafio.
-    Profissional pode enviar broadcast (destinatario_id=null) ou individual.
-    Aluno só pode enviar mensagem individual para o profissional.
+    Envia mensagem no chat de GRUPO do desafio.
+    Profissional e todos os alunos inscritos e pagos podem enviar.
     """
     try:
         if mongo_db is None or not ObjectId.is_valid(desafio_id):
@@ -754,31 +786,28 @@ def enviar_mensagem(current_user_id, desafio_id):
         if not desafio:
             return jsonify({"erro": "Desafio não encontrado"}), 404
 
+        prof_desafio = _obter_profissional(desafio.get("profissional_id", ""))
+        if not _assinatura_prof_ativa(prof_desafio):
+            return jsonify(_ERRO_CHAT_BLOQ), 403
+
         is_profissional = desafio.get("profissional_id") == current_user_id
-        # Verifica inscrição para alunos
         if not is_profissional:
             inscricao = mongo_db["inscricoes_desafio"].find_one({
                 "desafio_id": desafio_id,
                 "user_id": current_user_id,
-                "status_pagamento": "PAGO"
+                "status_pagamento": "PAGO",
             })
             if not inscricao:
                 return jsonify({"erro": "Você precisa estar inscrito para enviar mensagens"}), 403
 
         memoria = carregar_memoria(current_user_id) or {}
-        destinatario_id = dados.get("destinatario_id")
-
-        # Aluno não pode fazer broadcast
-        if not is_profissional and not destinatario_id:
-            destinatario_id = desafio["profissional_id"]
-
         doc = obter_schema_padrao_mensagem_desafio(desafio_id, current_user_id)
         doc.update({
-            "remetente_nome":  memoria.get("nome", "Atleta"),
-            "remetente_tipo":  "profissional" if is_profissional else "aluno",
-            "tipo_mensagem":   "broadcast" if not destinatario_id else "individual",
-            "destinatario_id": destinatario_id,
-            "texto":           texto,
+            "canal":          "grupo",
+            "dupla_id":       None,
+            "remetente_nome": memoria.get("nome", "Atleta"),
+            "remetente_tipo": "profissional" if is_profissional else "aluno",
+            "texto":          texto,
         })
 
         mongo_db["chat_desafios"].insert_one(doc)
@@ -793,9 +822,9 @@ def enviar_mensagem(current_user_id, desafio_id):
 @_token_required
 def listar_mensagens(current_user_id, desafio_id):
     """
-    Retorna mensagens do chat.
-    Aluno: broadcasts + suas mensagens individuais.
-    Profissional: todas.
+    Retorna mensagens do chat de GRUPO.
+    Profissional e alunos pagos veem todas as mensagens do grupo.
+    Compatível com documentos legados (tipo_mensagem="broadcast", sem campo canal).
     """
     try:
         if mongo_db is None or not ObjectId.is_valid(desafio_id):
@@ -806,30 +835,29 @@ def listar_mensagens(current_user_id, desafio_id):
             return jsonify([]), 200
 
         is_profissional = desafio.get("profissional_id") == current_user_id
-
-        if is_profissional:
-            filtro = {"desafio_id": desafio_id}
-        else:
-            filtro = {
+        if not is_profissional:
+            inscricao = mongo_db["inscricoes_desafio"].find_one({
                 "desafio_id": desafio_id,
-                "$or": [
-                    {"tipo_mensagem": "broadcast"},
-                    {"remetente_id": current_user_id},
-                    {"destinatario_id": current_user_id},
-                ]
-            }
+                "user_id": current_user_id,
+                "status_pagamento": "PAGO",
+            })
+            if not inscricao:
+                return jsonify({"erro": "Você precisa estar inscrito para ver mensagens"}), 403
 
-        cursor = mongo_db["chat_desafios"].find(filtro).sort("enviada_em", 1).limit(200)
+        # Documentos novos (canal="grupo") + legados (tipo_mensagem="broadcast" sem campo canal)
+        filtro = {
+            "desafio_id": desafio_id,
+            "$or": [
+                {"canal": "grupo"},
+                {"tipo_mensagem": "broadcast", "canal": {"$exists": False}},
+            ],
+        }
+
+        cursor = mongo_db["chat_desafios"].find(filtro).sort("enviada_em", 1).limit(300)
         msgs = []
         for m in cursor:
             m.pop("_id", None)
             msgs.append(m)
-
-        # Marca mensagens do usuário como lidas
-        mongo_db["chat_desafios"].update_many(
-            {"desafio_id": desafio_id, "destinatario_id": current_user_id, "lida": False},
-            {"$set": {"lida": True}}
-        )
 
         return jsonify(msgs), 200
 
@@ -838,9 +866,215 @@ def listar_mensagens(current_user_id, desafio_id):
         return jsonify([]), 200
 
 
+@performance_bp.route("/chat/<desafio_id>/privado/<aluno_id>/mensagem", methods=["POST"])
+@_token_required
+def enviar_mensagem_privada(current_user_id, desafio_id, aluno_id):
+    """
+    Envia mensagem no chat privado profissional↔aluno.
+    Apenas o profissional do desafio ou o próprio aluno podem enviar.
+    """
+    try:
+        if mongo_db is None or not ObjectId.is_valid(desafio_id):
+            return jsonify({"erro": "Inválido"}), 400
+
+        dados = request.get_json(force=True)
+        texto = str(dados.get("texto", "")).strip()
+        if not texto:
+            return jsonify({"erro": "Texto obrigatório"}), 400
+
+        desafio = mongo_db["desafios"].find_one({"_id": ObjectId(desafio_id)})
+        if not desafio:
+            return jsonify({"erro": "Desafio não encontrado"}), 404
+
+        profissional_id = desafio.get("profissional_id", "")
+        prof_desafio = _obter_profissional(profissional_id)
+        if not _assinatura_prof_ativa(prof_desafio):
+            return jsonify(_ERRO_CHAT_BLOQ), 403
+
+        is_profissional = profissional_id == current_user_id
+        is_aluno        = current_user_id == aluno_id
+
+        if not is_profissional and not is_aluno:
+            return jsonify({"erro": "Sem permissão para este chat"}), 403
+
+        inscricao = mongo_db["inscricoes_desafio"].find_one({
+            "desafio_id": desafio_id,
+            "user_id":    aluno_id,
+            "status_pagamento": "PAGO",
+        })
+        if not inscricao:
+            return jsonify({"erro": "Aluno não está inscrito no desafio"}), 403
+
+        dupla   = _dupla_id(profissional_id, aluno_id)
+        memoria = carregar_memoria(current_user_id) or {}
+        doc     = obter_schema_padrao_mensagem_desafio(desafio_id, current_user_id)
+        doc.update({
+            "canal":          "privado",
+            "dupla_id":       dupla,
+            "remetente_nome": memoria.get("nome", "Atleta"),
+            "remetente_tipo": "profissional" if is_profissional else "aluno",
+            "texto":          texto,
+        })
+
+        mongo_db["chat_desafios"].insert_one(doc)
+        return jsonify({"sucesso": True}), 201
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro enviar_mensagem_privada: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@performance_bp.route("/chat/<desafio_id>/privado/<aluno_id>/mensagens", methods=["GET"])
+@_token_required
+def listar_mensagens_privadas(current_user_id, desafio_id, aluno_id):
+    """
+    Retorna mensagens do chat privado entre profissional e um aluno específico.
+    Acessível pelo profissional do desafio ou pelo próprio aluno.
+    """
+    try:
+        if mongo_db is None or not ObjectId.is_valid(desafio_id):
+            return jsonify([]), 200
+
+        desafio = mongo_db["desafios"].find_one({"_id": ObjectId(desafio_id)})
+        if not desafio:
+            return jsonify([]), 200
+
+        profissional_id = desafio.get("profissional_id", "")
+        is_profissional = profissional_id == current_user_id
+        is_aluno        = current_user_id == aluno_id
+
+        if not is_profissional and not is_aluno:
+            return jsonify({"erro": "Sem permissão para este chat"}), 403
+
+        dupla  = _dupla_id(profissional_id, aluno_id)
+        filtro = {"canal": "privado", "desafio_id": desafio_id, "dupla_id": dupla}
+
+        cursor = mongo_db["chat_desafios"].find(filtro).sort("enviada_em", 1).limit(100)
+        msgs = []
+        for m in cursor:
+            m.pop("_id", None)
+            msgs.append(m)
+
+        # Marca mensagens recebidas como lidas
+        outro_id = aluno_id if is_profissional else profissional_id
+        mongo_db["chat_desafios"].update_many(
+            {**filtro, "remetente_id": outro_id, "lida": False},
+            {"$set": {"lida": True}},
+        )
+
+        return jsonify(msgs), 200
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro listar_mensagens_privadas: {e}")
+        return jsonify([]), 200
+
+
+# ── Função de limpeza exportada para o scheduler ────────────────────────────
+
+def limpar_mensagens_chat() -> tuple:
+    """
+    Aplica os dois critérios de retenção independentemente por canal:
+      - Grupo:  máx 300 mensagens OU 30 dias por desafio_id
+      - Privado: máx 100 mensagens OU 30 dias por (desafio_id, dupla_id)
+    Retorna (total_grupo_deletadas, total_privado_deletadas).
+    """
+    if mongo_db is None:
+        return 0, 0
+
+    limite_30d    = (datetime.now() - timedelta(days=30)).isoformat()
+    total_grupo   = 0
+    total_privado = 0
+
+    # ── GRUPO ────────────────────────────────────────────────────────────────
+    desafio_ids = mongo_db["chat_desafios"].distinct("desafio_id", {"canal": "grupo"})
+    for did in desafio_ids:
+        base = {"canal": "grupo", "desafio_id": did}
+
+        # 1. Critério de data (30 dias)
+        r = mongo_db["chat_desafios"].delete_many({**base, "enviada_em": {"$lt": limite_30d}})
+        total_grupo += r.deleted_count
+
+        # 2. Critério de contagem (300)
+        if mongo_db["chat_desafios"].count_documents(base) > 300:
+            cutoff = list(
+                mongo_db["chat_desafios"]
+                .find(base, {"enviada_em": 1})
+                .sort("enviada_em", -1)
+                .skip(300)
+                .limit(1)
+            )
+            if cutoff:
+                r2 = mongo_db["chat_desafios"].delete_many(
+                    {**base, "enviada_em": {"$lte": cutoff[0]["enviada_em"]}}
+                )
+                total_grupo += r2.deleted_count
+
+    # ── PRIVADO ──────────────────────────────────────────────────────────────
+    pares = list(mongo_db["chat_desafios"].aggregate([
+        {"$match": {"canal": "privado"}},
+        {"$group": {"_id": {"desafio_id": "$desafio_id", "dupla_id": "$dupla_id"}}},
+    ]))
+    for par in pares:
+        did  = par["_id"]["desafio_id"]
+        duid = par["_id"]["dupla_id"]
+        base = {"canal": "privado", "desafio_id": did, "dupla_id": duid}
+
+        # 1. Critério de data (30 dias)
+        r = mongo_db["chat_desafios"].delete_many({**base, "enviada_em": {"$lt": limite_30d}})
+        total_privado += r.deleted_count
+
+        # 2. Critério de contagem (100)
+        if mongo_db["chat_desafios"].count_documents(base) > 100:
+            cutoff = list(
+                mongo_db["chat_desafios"]
+                .find(base, {"enviada_em": 1})
+                .sort("enviada_em", -1)
+                .skip(100)
+                .limit(1)
+            )
+            if cutoff:
+                r2 = mongo_db["chat_desafios"].delete_many(
+                    {**base, "enviada_em": {"$lte": cutoff[0]["enviada_em"]}}
+                )
+                total_privado += r2.deleted_count
+
+    return total_grupo, total_privado
+
+
 # ══════════════════════════════════════════════════════════════
 # ROTAS DE AVALIAÇÃO
 # ══════════════════════════════════════════════════════════════
+
+@performance_bp.route("/inscricoes/<inscricao_id>/status", methods=["GET"])
+@_token_required
+def status_inscricao(current_user_id, inscricao_id):
+    """
+    Rota leve para polling de confirmação PIX.
+    Retorna apenas status_pagamento e pago_em da inscrição.
+    user_id no filtro garante que só o próprio inscrito pode checar.
+    """
+    try:
+        if mongo_db is None or not ObjectId.is_valid(inscricao_id):
+            return jsonify({"erro": "Inválido"}), 400
+
+        inscricao = mongo_db["inscricoes_desafio"].find_one(
+            {"_id": ObjectId(inscricao_id), "user_id": current_user_id},
+            {"status_pagamento": 1, "pago_em": 1, "desafio_id": 1}
+        )
+        if not inscricao:
+            return jsonify({"erro": "Inscrição não encontrada"}), 404
+
+        return jsonify({
+            "inscricao_id":    inscricao_id,
+            "status_pagamento": inscricao.get("status_pagamento", "PENDING"),
+            "pago_em":          inscricao.get("pago_em"),
+            "desafio_id":       inscricao.get("desafio_id"),
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro status_inscricao: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 
 @performance_bp.route("/inscricoes/<inscricao_id>/avaliar", methods=["POST"])
 @_token_required
@@ -903,6 +1137,94 @@ def avaliar_desafio(current_user_id, inscricao_id):
 
     except Exception as e:
         logger.error(f"[PERF] Erro avaliar_desafio: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════
+# ROTA DE SAÚDE DO ALUNO — PROFISSIONAL (acesso via grant)
+# ══════════════════════════════════════════════════════════════
+
+@performance_bp.route("/alunos/<aluno_id>/saude", methods=["GET"])
+@_token_required
+def saude_do_aluno(current_user_id, aluno_id):
+    """
+    Profissional consulta os dados de saúde de um aluno específico.
+    Só retorna algo se existir um grant ATIVO para profissional_id+aluno_id
+    (índice composto profissional_id+aluno_id+status em grants_saude).
+    """
+    try:
+        if mongo_db is None:
+            return jsonify({"erro": "Banco indisponível"}), 500
+        if not ObjectId.is_valid(aluno_id):
+            return jsonify({"erro": "Aluno inválido"}), 400
+
+        prof = _obter_profissional(current_user_id)
+        if not _assinatura_prof_ativa(prof):
+            return jsonify(_ERRO_ASSINATURA), 403
+
+        grant = mongo_db["grants_saude"].find_one({
+            "profissional_id": current_user_id,
+            "aluno_id":         aluno_id,
+            "status":           "ativo",
+        })
+        if not grant:
+            return jsonify({
+                "erro": "Você não tem acesso ativo aos dados de saúde deste aluno."
+            }), 403
+
+        aluno = mongo_db["usuarios"].find_one({"_id": ObjectId(aluno_id)})
+        if not aluno:
+            return jsonify({"erro": "Aluno não encontrado"}), 404
+
+        # Mesma migração reversa usada em carregar_memoria(): preenche o subdocumento
+        # com os campos legados (peso_kg/altura_cm na raiz) se ele ainda não existir.
+        perfil_saude = aluno.get("perfil_saude") or {}
+        if not perfil_saude.get("peso_kg") and aluno.get("peso_kg") is not None:
+            perfil_saude["peso_kg"] = aluno.get("peso_kg")
+        if not perfil_saude.get("altura_cm") and aluno.get("altura_cm") is not None:
+            perfil_saude["altura_cm"] = aluno.get("altura_cm")
+
+        # Dados derivados da coleção "atividades" (não duplicados no perfil_saude).
+        ha_7_dias = (datetime.now() - timedelta(days=7)).isoformat()
+        treinos_completados_total = mongo_db["atividades"].count_documents({
+            "user_id": aluno_id, "tipo": "Treino",
+        })
+        frequencia_treino_semanal = mongo_db["atividades"].count_documents({
+            "user_id": aluno_id, "tipo": "Treino",
+            "data_atividade": {"$gte": ha_7_dias},
+        })
+
+        def _campo_health(campo):
+            """Retorna o subdocumento {valor, fonte, sincronizado_em} ou None."""
+            v = perfil_saude.get(campo)
+            if isinstance(v, dict):
+                return v
+            return None
+
+        return jsonify({
+            "aluno_id": aluno_id,
+            "nome":     aluno.get("nome", "Atleta"),
+            "perfil_saude": {
+                "peso_kg":            perfil_saude.get("peso_kg"),
+                "altura_cm":          perfil_saude.get("altura_cm"),
+                "percentual_gordura": perfil_saude.get("percentual_gordura"),
+                "atualizado_em":      perfil_saude.get("atualizado_em", ""),
+                "fc_repouso":         _campo_health("fc_repouso"),
+                "passos_diarios":     _campo_health("passos_diarios"),
+                "calorias_ativas":    _campo_health("calorias_ativas"),
+                "sono_horas":         _campo_health("sono_horas"),
+            },
+            "frequencia_treino_semanal": frequencia_treino_semanal,
+            "treinos_completados_total": treinos_completados_total,
+            "grant": {
+                "desafio_id":      grant.get("desafio_id"),
+                "data_concessao":  grant.get("data_concessao"),
+                "data_expiracao":  grant.get("data_expiracao"),
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro saude_do_aluno: {e}")
         return jsonify({"erro": str(e)}), 500
 
 

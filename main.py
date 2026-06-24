@@ -9,6 +9,7 @@ from data_manager import mongo_db
 from data_global import carregar_memoria_global, registrar_interacao_global
 from logic_gamificacao import gerar_missoes_diarias
 from logic_equilibrio import resetar_homeostase_diaria # [AURA FIX] Vital para reset de fadiga
+from performance_bp import limpar_mensagens_chat
 
 # Configuração de Logs
 logging.basicConfig(
@@ -53,7 +54,31 @@ def rotina_diaria_manutencao():
             count_reset += 1
             
         logger.info(f"✅ [SCHEDULER] Homeostase recalibrada para {count_reset} atletas.")
-        
+
+        agora_iso = datetime.now().isoformat()
+
+        # Expira grants de acesso a dados de saúde vencidos.
+        resultado_grants = mongo_db["grants_saude"].update_many(
+            {"status": "ativo", "data_expiracao": {"$lte": agora_iso}},
+            {"$set": {"status": "expirado", "atualizado_em": agora_iso}}
+        )
+        logger.info(f"🔒 [SCHEDULER] {resultado_grants.modified_count} grants de saúde expirados.")
+
+        # Safety net: desativa assinaturas profissionais cujo plano_expira já passou.
+        # Cobre casos onde o webhook RevenueCat falhou ou atrasou.
+        resultado_profs = mongo_db["profissionais"].update_many(
+            {"plano_ativo": True, "plano_expira": {"$lte": agora_iso}},
+            {"$set": {"plano_ativo": False, "updated_at": agora_iso}}
+        )
+        logger.info(f"🔒 [SCHEDULER] {resultado_profs.modified_count} assinaturas profissionais expiradas.")
+
+        # Limpeza de mensagens de chat (grupo: 300/30d | privado: 100/30d)
+        total_grupo, total_privado = limpar_mensagens_chat()
+        logger.info(
+            f"💬 [SCHEDULER] Chat limpo: {total_grupo} msgs de grupo, "
+            f"{total_privado} msgs privadas removidas."
+        )
+
         # Registra a atividade de manutenção no analytics global
         registrar_interacao_global(sentimento="sistema", tipo_acao="manutencao_diaria")
         

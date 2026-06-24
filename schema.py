@@ -24,8 +24,24 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         "auth_provider": "email",       # email, apple, google ou strava
         "created_at": agora_iso,
         "updated_at": agora_iso,
-        "foto_perfil": "", 
-        
+        "foto_perfil": "",
+
+        # --- [AURA NEW] PERFIL DE SAÚDE (persistente, único por usuário, nunca apagado) ---
+        # peso_kg/altura_cm também existem soltos na raiz do doc por compatibilidade com
+        # EditarPerfil.jsx — toda escrita nos dois lugares é sincronizada (ver rotas_api.py).
+        # Os 4 campos abaixo são subdocumentos com valor + fonte + sincronizado_em para
+        # que a IA saiba distinguir dado automático (Apple Health) de dado manual.
+        "perfil_saude": {
+            "peso_kg":            None,
+            "altura_cm":          None,
+            "percentual_gordura": None,
+            "atualizado_em":      agora_iso,
+            "fc_repouso":      {"valor": None, "fonte": None, "sincronizado_em": None},
+            "passos_diarios":  {"valor": None, "fonte": None, "sincronizado_em": None},
+            "calorias_ativas": {"valor": None, "fonte": None, "sincronizado_em": None},
+            "sono_horas":      {"valor": None, "fonte": None, "sincronizado_em": None},
+        },
+
         # --- [AURA NEW] ASSINATURA NATIVA ---
         "plano": "free",                # free, plus, pro
         "status_assinatura": "inativo", # ativo, inativo, expirado
@@ -158,6 +174,7 @@ def obter_schema_padrao_profissional(user_id: str = "") -> Dict[str, Any]:
         "status_verificacao":  "pendente",        # pendente|verificado|rejeitado
         "verificacao_paga":    False,
         "plano_ativo":         True,
+        "trial_ativo":         True,   # False quando primeira IAP aura_profissional_mensal é confirmada
         "plano_inicio":        agora.isoformat(),
         "plano_expira":        plano_expira,
         "total_alunos":        0,
@@ -225,21 +242,58 @@ def obter_schema_padrao_inscricao(desafio_id: str = "", user_id: str = "", profi
         "valor_total":         0.0,
         "valor_aura":          0.0,
         "valor_profissional":  0.0,
+        # --- [AURA NEW] Consentimento de acesso a dados de saúde ---
+        # Aceito explicitamente na tela de pagamento antes de inscrever_desafio().
+        # Vira a base do grant em "grants_saude" quando o pagamento é confirmado.
+        "consentimento": {
+            "aceito":       False,
+            "versao_termo": "",
+            "aceito_em":    "",
+            "escopo":       [],
+        },
     }
 
 
 def obter_schema_padrao_mensagem_desafio(desafio_id: str = "", remetente_id: str = "") -> Dict[str, Any]:
-    """Mensagem no chat de um desafio (broadcast ou individual)."""
+    """Mensagem no chat de um desafio (grupo ou privado)."""
     return {
-        "desafio_id":        desafio_id,
-        "remetente_id":      remetente_id,
-        "remetente_nome":    "",
-        "remetente_tipo":    "aluno",             # profissional|aluno
-        "tipo_mensagem":     "broadcast",         # broadcast|individual
-        "destinatario_id":   None,
-        "texto":             "",
-        "lida":              False,
-        "enviada_em":        datetime.now().isoformat(),
+        "canal":          "grupo",    # "grupo" | "privado"
+        "desafio_id":     desafio_id,
+        "dupla_id":       None,       # apenas para canal="privado": "<min_id>_<max_id>"
+        "remetente_id":   remetente_id,
+        "remetente_nome": "",
+        "remetente_tipo": "aluno",    # "profissional" | "aluno"
+        "texto":          "",
+        "lida":           False,
+        "enviada_em":     datetime.now().isoformat(),
+    }
+
+
+def obter_schema_padrao_grant_saude(profissional_id: str = "", aluno_id: str = "",
+                                     desafio_id: str = "", inscricao_id: str = "") -> Dict[str, Any]:
+    """
+    Grant de acesso temporário do profissional aos dados de saúde de um aluno.
+    Criado quando o pagamento do desafio é confirmado (webhook Asaas); expira
+    junto com o desafio. Nunca é deletado — apenas marcado expirado/revogado,
+    e o perfil de saúde do aluno permanece intacto.
+    """
+    agora = datetime.now().isoformat()
+    return {
+        "profissional_id": profissional_id,
+        "aluno_id":        aluno_id,
+        "desafio_id":      desafio_id,
+        "inscricao_id":    inscricao_id,
+        "data_concessao":  agora,
+        "data_expiracao":  "",          # data_inicio do desafio + duracao_dias, congelado na criação
+        "status":          "ativo",     # ativo|expirado|revogado
+        "consentimento": {
+            "aceito":       False,
+            "versao_termo": "",
+            "aceito_em":    "",
+            "escopo":       [],
+        },
+        "criado_em":     agora,
+        "atualizado_em": agora,
     }
 
 

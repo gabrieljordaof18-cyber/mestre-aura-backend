@@ -342,7 +342,19 @@ if mongo_db is not None:
         
         # Novo índice para o histórico de evolução
         mongo_db["plan_history"].create_index([("user_id", 1), ("archived_at", -1)])
-            
+
+        # ── [AURA NEW] Índices para Grants de Acesso a Dados de Saúde (Performance) ──
+        # Resolve "quais alunos este profissional tem acesso ativo agora"
+        mongo_db["grants_saude"].create_index([("profissional_id", 1), ("status", 1)])
+        # Resolve "este profissional tem grant ativo pra este aluno específico"
+        mongo_db["grants_saude"].create_index([("profissional_id", 1), ("aluno_id", 1), ("status", 1)])
+        # Evita grants duplicados para o mesmo trio profissional+aluno+desafio (webhook idempotente)
+        if "grant_unico_por_desafio" not in mongo_db["grants_saude"].index_information():
+            mongo_db["grants_saude"].create_index(
+                [("profissional_id", 1), ("aluno_id", 1), ("desafio_id", 1)],
+                unique=True, name="grant_unico_por_desafio"
+            )
+
         logger.info("⚡ Índices robustos validados no MongoDB Atlas.")
     except Exception as e:
         logger.warning(f"⚠️ Aviso ao gerenciar índices: {e}")

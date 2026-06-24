@@ -452,6 +452,7 @@ def get_status_jogador(current_user_id):
             "peso_kg":   dados.get("peso_kg"),
             "altura_cm": dados.get("altura_cm"),
             "idade":     dados.get("idade"),
+            "perfil_saude": dados.get("perfil_saude", {}),
             # Progressão
             "xp_total":         xp_total,
             "moedas":           int(dados.get("moedas", xp_total)),
@@ -706,19 +707,83 @@ def atualizar_biometria(current_user_id):
             update_payload["nome"] = str(dados["nome"]).strip()
 
         # Biometria — só atualiza se enviado e não-nulo
+        # [AURA NEW] Toda escrita em peso/altura/percentual_gordura sincroniza tanto o
+        # campo legado na raiz (compatibilidade com EditarPerfil.jsx) quanto o
+        # subdocumento perfil_saude (fonte única usada pelo grant de acesso do profissional).
+        houve_atualizacao_saude = False
         try:
             peso = dados.get("peso")
             if peso is not None and str(peso).strip() not in ("", "null", "None"):
-                update_payload["peso_kg"] = float(peso)
+                peso_val = float(peso)
+                update_payload["peso_kg"] = peso_val
+                update_payload["perfil_saude.peso_kg"] = peso_val
+                houve_atualizacao_saude = True
         except (TypeError, ValueError):
             pass
 
         try:
             altura = dados.get("altura")
             if altura is not None and str(altura).strip() not in ("", "null", "None"):
-                update_payload["altura_cm"] = float(altura)
+                altura_val = float(altura)
+                update_payload["altura_cm"] = altura_val
+                update_payload["perfil_saude.altura_cm"] = altura_val
+                houve_atualizacao_saude = True
         except (TypeError, ValueError):
             pass
+
+        # percentual_gordura não tem campo legado equivalente — vive só no subdocumento.
+        try:
+            gordura = dados.get("percentual_gordura")
+            if gordura is not None and str(gordura).strip() not in ("", "null", "None"):
+                gordura_val = float(gordura)
+                if 0 <= gordura_val <= 100:
+                    update_payload["perfil_saude.percentual_gordura"] = gordura_val
+                    houve_atualizacao_saude = True
+        except (TypeError, ValueError):
+            pass
+
+        # ── Campos Apple Health / manual (subdocumentos com valor+fonte+sincronizado_em) ──
+        _CAMPOS_HEALTH = {
+            "fc_repouso":      {"min": 20,  "max": 300,    "tipo": int},
+            "passos_diarios":  {"min": 0,   "max": 100000, "tipo": int},
+            "calorias_ativas": {"min": 0,   "max": 10000,  "tipo": float},
+            "sono_horas":      {"min": 0.0, "max": 24.0,   "tipo": float},
+        }
+        _FONTES_VALIDAS = {"apple_health", "manual"}
+        agora_health = datetime.now().isoformat()
+
+        for campo, regra in _CAMPOS_HEALTH.items():
+            payload_campo = dados.get(campo)
+            if payload_campo is None:
+                continue
+            # Aceita {valor, fonte} ou valor direto (legado/manual simples)
+            if isinstance(payload_campo, dict):
+                raw_valor = payload_campo.get("valor")
+                raw_fonte = payload_campo.get("fonte", "manual")
+                raw_ts    = payload_campo.get("sincronizado_em") or agora_health
+            else:
+                raw_valor = payload_campo
+                raw_fonte = "manual"
+                raw_ts    = agora_health
+
+            if raw_valor is None or str(raw_valor).strip() in ("", "null", "None"):
+                continue
+            try:
+                valor_conv = regra["tipo"](float(raw_valor))
+            except (TypeError, ValueError):
+                continue
+            if not (regra["min"] <= valor_conv <= regra["max"]):
+                continue
+            fonte = raw_fonte if raw_fonte in _FONTES_VALIDAS else "manual"
+            update_payload[f"perfil_saude.{campo}"] = {
+                "valor":          valor_conv,
+                "fonte":          fonte,
+                "sincronizado_em": raw_ts,
+            }
+            houve_atualizacao_saude = True
+
+        if houve_atualizacao_saude:
+            update_payload["perfil_saude.atualizado_em"] = datetime.now().isoformat()
 
         try:
             idade = dados.get("idade")
@@ -1450,8 +1515,32 @@ def webhook_revenuecat():
         if not app_user_id:
             return jsonify({"status": "ignorado", "motivo": "sem app_user_id"}), 200
 
-        # Mapeamento de planos baseado no Product ID do RevenueCat
         product_id = evento.get("product_id", "").lower()
+        agora_iso  = datetime.now().isoformat()
+
+        # ── Assinatura de PROFISSIONAL (aura_profissional_mensal) ──────────────
+        if "profissional" in product_id:
+            if tipo in ["INITIAL_PURCHASE", "RENEWAL", "SUBSCRIBER_ALIAS"]:
+                expira = (datetime.now() + timedelta(days=32)).isoformat()
+                mongo_db["profissionais"].update_one(
+                    {"user_id": app_user_id},
+                    {"$set": {
+                        "plano_ativo":  True,
+                        "trial_ativo":  False,   # primeira IAP confirma saída do trial
+                        "plano_expira": expira,
+                        "updated_at":   agora_iso,
+                    }}
+                )
+                logger.info(f"💰 [PERF] Assinatura profissional ATIVADA para {app_user_id} até {expira}")
+            elif tipo in ["CANCELLATION", "EXPIRATION"]:
+                mongo_db["profissionais"].update_one(
+                    {"user_id": app_user_id},
+                    {"$set": {"plano_ativo": False, "updated_at": agora_iso}}
+                )
+                logger.info(f"🚫 [PERF] Assinatura profissional CANCELADA/EXPIRADA para {app_user_id}")
+            return jsonify({"status": "recebido"}), 200
+
+        # ── Assinatura de USUÁRIO COMUM (plus / pro) ───────────────────────────
         novo_plano = "pro" if "pro" in product_id else "plus"
 
         # 1. Compra ou Renovação com sucesso
@@ -1463,7 +1552,7 @@ def webhook_revenuecat():
                     "plano": novo_plano,
                     "status_assinatura": "ativo",
                     "data_vencimento": vencimento,
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": agora_iso,
                 }}
             )
             logger.info(f"💰 Assinatura {novo_plano} ATIVADA para o usuário {app_user_id}")
@@ -1475,7 +1564,7 @@ def webhook_revenuecat():
                 {"$set": {
                     "plano": "free",
                     "status_assinatura": "expirado",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": agora_iso,
                 }}
             )
             logger.info(f"🚫 Assinatura FINALIZADA para o usuário {app_user_id}")
@@ -2710,6 +2799,42 @@ def webhook_asaas():
                                         {"user_id": d.get("profissional_id")},
                                         {"$inc": {"total_alunos": 1}}
                                     )
+
+                                # ── [AURA NEW] Cria/renova o grant de acesso a dados de saúde ──
+                                # Só nasce aqui (pagamento confirmado), nunca na inscrição PENDING.
+                                try:
+                                    inscricao_doc = mongo_db["inscricoes_desafio"].find_one({"_id": ObjectId(inscricao_id)})
+                                    if inscricao_doc and d:
+                                        duracao_dias = int(d.get("duracao_dias", 30))
+                                        data_inicio_str = inscricao_doc.get("data_inicio") or datetime.now().strftime("%Y-%m-%d")
+                                        try:
+                                            data_inicio_dt = datetime.fromisoformat(data_inicio_str)
+                                        except ValueError:
+                                            data_inicio_dt = datetime.now()
+                                        data_expiracao = (data_inicio_dt + timedelta(days=duracao_dias)).isoformat()
+
+                                        mongo_db["grants_saude"].update_one(
+                                            {
+                                                "profissional_id": inscricao_doc.get("profissional_id", ""),
+                                                "aluno_id":         inscricao_doc.get("user_id", ""),
+                                                "desafio_id":       desafio_id,
+                                            },
+                                            {
+                                                "$set": {
+                                                    "inscricao_id":   inscricao_id,
+                                                    "data_concessao": datetime.now().isoformat(),
+                                                    "data_expiracao": data_expiracao,
+                                                    "status":         "ativo",
+                                                    "consentimento":  inscricao_doc.get("consentimento", {}),
+                                                    "atualizado_em":  datetime.now().isoformat(),
+                                                },
+                                                "$setOnInsert": {"criado_em": datetime.now().isoformat()},
+                                            },
+                                            upsert=True,
+                                        )
+                                        logger.info(f"✅ [PERF] Grant de saúde concedido: prof={inscricao_doc.get('profissional_id')} aluno={inscricao_doc.get('user_id')} até {data_expiracao}")
+                                except Exception as ge:
+                                    logger.error(f"[PERF] Erro ao criar grant de saúde: {ge}")
                             logger.info(f"✅ [PERF] Inscrição {inscricao_id} ativada via webhook.")
                         except Exception as we:
                             logger.error(f"[PERF] Erro ao ativar inscrição no webhook: {we}")

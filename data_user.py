@@ -72,7 +72,26 @@ def carregar_memoria(user_id: str) -> Dict[str, Any]:
                 usuario["ultima_missao_data"] = ""
             if "seguro_expira_em" not in usuario:
                 usuario["seguro_expira_em"] = ""
-            
+
+            # [AURA NEW] Perfil de Saúde — migração reversa de campos legados.
+            # Usuários antigos têm peso_kg/altura_cm soltos na raiz, sem o subdocumento
+            # perfil_saude. Reconstituímos aqui na leitura (sem persistir), igual ao
+            # padrão de blindagem já usado acima para os demais campos legados.
+            perfil_saude = usuario.get("perfil_saude")
+            if not isinstance(perfil_saude, dict):
+                usuario["perfil_saude"] = {
+                    "peso_kg": usuario.get("peso_kg"),
+                    "altura_cm": usuario.get("altura_cm"),
+                    "percentual_gordura": None,
+                    "atualizado_em": usuario.get("updated_at", datetime.now().isoformat()),
+                }
+            else:
+                # Se o campo legado tiver valor e o subdocumento ainda não, preenche o gap.
+                if perfil_saude.get("peso_kg") is None and usuario.get("peso_kg") is not None:
+                    perfil_saude["peso_kg"] = usuario.get("peso_kg")
+                if perfil_saude.get("altura_cm") is None and usuario.get("altura_cm") is not None:
+                    perfil_saude["altura_cm"] = usuario.get("altura_cm")
+
             return usuario
         else:
             logger.error(f"❌ Usuário {clean_user_id} não encontrado no banco Atlas.")
