@@ -147,9 +147,13 @@ def criar_cobranca(dados_pagamento: dict) -> dict:
         response = requests.post(f"{ASAAS_URL}/payments", json=payload, headers=headers)
         
         if response.status_code != 200:
-            logger.error(f"❌ Resposta Asaas Erro ({response.status_code})")
-            erro_json = response.json()
-            msg = erro_json.get('errors', [{'description': 'Erro na API Asaas'}])[0]['description']
+            try:
+                erro_json = response.json()
+                msg = erro_json.get('errors', [{'description': 'Erro na API Asaas'}])[0]['description']
+            except Exception:
+                erro_json = {}
+                msg = response.text or 'Erro na API Asaas'
+            logger.error(f"❌ Resposta Asaas Erro ({response.status_code}) | body: {erro_json}")
             return {"erro": f"Pagamento recusado: {msg}"}
         
         data_asaas = response.json()
