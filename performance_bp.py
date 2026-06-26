@@ -1038,7 +1038,29 @@ def limpar_mensagens_chat() -> tuple:
                 )
                 total_privado += r2.deleted_count
 
-    return total_grupo, total_privado
+    # ── CHAT_CLÃ ─────────────────────────────────────────────────────────────────
+    # Critérios: 300 msgs/clã OU 30 dias. Campo de data: created_at
+    cla_ids = mongo_db["chat_cla"].distinct("cla_id")
+    total_cla = 0
+    for cid in cla_ids:
+        base = {"cla_id": cid}
+        r = mongo_db["chat_cla"].delete_many({**base, "created_at": {"$lt": limite_30d}})
+        total_cla += r.deleted_count
+        if mongo_db["chat_cla"].count_documents(base) > 300:
+            cutoff = list(
+                mongo_db["chat_cla"]
+                .find(base, {"created_at": 1})
+                .sort("created_at", -1)
+                .skip(300)
+                .limit(1)
+            )
+            if cutoff:
+                r2 = mongo_db["chat_cla"].delete_many(
+                    {**base, "created_at": {"$lte": cutoff[0]["created_at"]}}
+                )
+                total_cla += r2.deleted_count
+
+    return total_grupo, total_privado, total_cla
 
 
 # ══════════════════════════════════════════════════════════════

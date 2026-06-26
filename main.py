@@ -72,11 +72,11 @@ def rotina_diaria_manutencao():
         )
         logger.info(f"🔒 [SCHEDULER] {resultado_profs.modified_count} assinaturas profissionais expiradas.")
 
-        # Limpeza de mensagens de chat (grupo: 300/30d | privado: 100/30d)
-        total_grupo, total_privado = limpar_mensagens_chat()
+        # Limpeza de mensagens de chat (grupo: 300/30d | privado: 100/30d | clã: 300/30d)
+        total_grupo, total_privado, total_cla = limpar_mensagens_chat()
         logger.info(
             f"💬 [SCHEDULER] Chat limpo: {total_grupo} msgs de grupo, "
-            f"{total_privado} msgs privadas removidas."
+            f"{total_privado} msgs privadas, {total_cla} msgs de clã removidas."
         )
 
         # Registra a atividade de manutenção no analytics global
