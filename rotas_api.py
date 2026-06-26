@@ -173,6 +173,11 @@ def auth_social():
             usuario = criar_novo_usuario(email, nome_final, auth_provider=provider)
             if not usuario:
                 return jsonify({"erro": "Falha ao criar usuário"}), 500
+            _criar_notificacao(
+                str(usuario["_id"]), "sistema",
+                "🎁 Você tem 7 dias grátis do Plano Plus! Ative em Mercado → Vouchers e desbloqueie o Mestre da Aura.",
+                {"action": "open_mercado_vouchers"}
+            )
         else:
             # Garante auth_provider atualizado mesmo que o usuário já exista
             atualizar_usuario(str(usuario["_id"]), {
@@ -238,6 +243,11 @@ def registrar_usuario():
 
         token = gerar_token_jwt(novo_user["_id"])
         logger.info(f"🆕 Novo usuário registrado nativamente: {email}")
+        _criar_notificacao(
+            str(novo_user["_id"]), "sistema",
+            "🎁 Você tem 7 dias grátis do Plano Plus! Ative em Mercado → Vouchers e desbloqueie o Mestre da Aura.",
+            {"action": "open_mercado_vouchers"}
+        )
 
         seguro_ativo = False
         try:
@@ -483,6 +493,8 @@ def get_status_jogador(current_user_id):
             "cupons_ativos":      dados.get("cupons_ativos", []),
             # Perfil profissional
             "tipo_perfil":        dados.get("tipo_perfil", "atleta"),
+            # Trial Plus gratuito
+            "trial_usado":        dados.get("trial_usado", False),
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
@@ -663,10 +675,10 @@ def resgatar_voucher(current_user_id):
         if custo > 0 and moedas < custo:
             return jsonify({"erro": f"Aura Coins insuficientes. Necessário: {custo}."}), 400
 
-        if voucher_id == "v3":  # Free Trial 24h Plus
+        if voucher_id == "v3":  # Free Trial 7 dias Plus
             if user_data.get("trial_usado"):
                 return jsonify({"erro": "Trial já foi utilizado anteriormente."}), 400
-            expira = (datetime.now() + timedelta(hours=24)).isoformat()
+            expira = (datetime.now() + timedelta(days=7)).isoformat()
             salvar_memoria(current_user_id, {
                 "plano": "plus", "trial_usado": True, "trial_expira_em": expira
             })
