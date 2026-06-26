@@ -815,18 +815,21 @@ def pedidos():
 def encaminhar_fornecedor(pedido_id):
     """Muda status para ENVIADO_FORNECEDOR e redireciona com modal da mensagem."""
     try:
-        if mongo_db is not None:
-            mongo_db["pedidos"].update_one(
-                {"_id": ObjectId(pedido_id)},
-                {"$set": {
-                    "status": "ENVIADO_FORNECEDOR",
-                    "encaminhado_em": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat(),
-                }}
-            )
-            logger.info(f"📦 Pedido {pedido_id} encaminhado ao fornecedor.")
+        if mongo_db is None:
+            logger.error(f"❌ encaminhar_fornecedor bloqueado: mongo_db indisponível — pedido {pedido_id}")
+            return redirect(f"/admin/pedidos?erro=banco_indisponivel&pedido={pedido_id}")
+        mongo_db["pedidos"].update_one(
+            {"_id": ObjectId(pedido_id)},
+            {"$set": {
+                "status": "ENVIADO_FORNECEDOR",
+                "encaminhado_em": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }}
+        )
+        logger.info(f"📦 Pedido {pedido_id} encaminhado ao fornecedor.")
     except Exception as e:
         logger.error(f"Erro ao encaminhar pedido {pedido_id}: {e}")
+        return redirect(f"/admin/pedidos?erro=falha_encaminhar&pedido={pedido_id}")
     return redirect(f"/admin/pedidos?modal={pedido_id}")
 
 
@@ -838,19 +841,22 @@ def inserir_rastreio(pedido_id):
     if not codigo:
         return redirect("/admin/pedidos")
     try:
-        if mongo_db is not None:
-            mongo_db["pedidos"].update_one(
-                {"_id": ObjectId(pedido_id)},
-                {"$set": {
-                    "status": "RASTREIO_GERADO",
-                    "codigo_rastreio": codigo,
-                    "rastreio_atualizado_em": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat(),
-                }}
-            )
-            logger.info(f"📮 Rastreio '{codigo}' salvo para pedido {pedido_id}.")
+        if mongo_db is None:
+            logger.error(f"❌ inserir_rastreio bloqueado: mongo_db indisponível — pedido {pedido_id}")
+            return redirect(f"/admin/pedidos?erro=banco_indisponivel&pedido={pedido_id}")
+        mongo_db["pedidos"].update_one(
+            {"_id": ObjectId(pedido_id)},
+            {"$set": {
+                "status": "RASTREIO_GERADO",
+                "codigo_rastreio": codigo,
+                "rastreio_atualizado_em": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }}
+        )
+        logger.info(f"📮 Rastreio '{codigo}' salvo para pedido {pedido_id}.")
     except Exception as e:
         logger.error(f"Erro ao inserir rastreio no pedido {pedido_id}: {e}")
+        return redirect(f"/admin/pedidos?erro=falha_rastreio&pedido={pedido_id}")
     return redirect("/admin/pedidos")
 
 
@@ -859,18 +865,21 @@ def inserir_rastreio(pedido_id):
 def marcar_entregue(pedido_id):
     """Muda status para ENTREGUE."""
     try:
-        if mongo_db is not None:
-            mongo_db["pedidos"].update_one(
-                {"_id": ObjectId(pedido_id)},
-                {"$set": {
-                    "status": "ENTREGUE",
-                    "entregue_em": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat(),
-                }}
-            )
-            logger.info(f"✅ Pedido {pedido_id} marcado como ENTREGUE.")
+        if mongo_db is None:
+            logger.error(f"❌ marcar_entregue bloqueado: mongo_db indisponível — pedido {pedido_id}")
+            return redirect(f"/admin/pedidos?erro=banco_indisponivel&pedido={pedido_id}")
+        mongo_db["pedidos"].update_one(
+            {"_id": ObjectId(pedido_id)},
+            {"$set": {
+                "status": "ENTREGUE",
+                "entregue_em": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }}
+        )
+        logger.info(f"✅ Pedido {pedido_id} marcado como ENTREGUE.")
     except Exception as e:
         logger.error(f"Erro ao marcar pedido {pedido_id} como entregue: {e}")
+        return redirect(f"/admin/pedidos?erro=falha_entregue&pedido={pedido_id}")
     return redirect("/admin/pedidos")
 
 

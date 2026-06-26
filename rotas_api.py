@@ -853,26 +853,27 @@ def iap_creditar_cristais(current_user_id):
 
         qtd = CRISTAIS_IAP_POR_PACOTE[pacote_id]
 
-        if mongo_db is not None:
-            try:
-                mongo_db["iap_cristais_transactions"].insert_one({
-                    "_id": transaction_id,
-                    "user_id": current_user_id,
-                    "pacote_id": pacote_id,
-                    "cristais": qtd,
-                    "created_at": datetime.now().isoformat(),
-                })
-            except DuplicateKeyError:
-                mem = carregar_memoria(current_user_id) or {}
-                saldo = int(mem.get("saldo_cristais", 0))
-                return jsonify({
-                    "sucesso": True,
-                    "ja_processado": True,
-                    "cristais_creditados": 0,
-                    "novo_saldo_cristais": saldo,
-                }), 200
-        else:
-            logger.warning("iap/cristais: mongo_db ausente, usando apenas salvar_memoria")
+        if mongo_db is None:
+            logger.error(f"❌ IAP cristais bloqueado: mongo_db indisponível — tx={transaction_id} user={current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente em instantes — seus cristais NÃO foram cobrados."}), 503
+
+        try:
+            mongo_db["iap_cristais_transactions"].insert_one({
+                "_id": transaction_id,
+                "user_id": current_user_id,
+                "pacote_id": pacote_id,
+                "cristais": qtd,
+                "created_at": datetime.now().isoformat(),
+            })
+        except DuplicateKeyError:
+            mem = carregar_memoria(current_user_id) or {}
+            saldo = int(mem.get("saldo_cristais", 0))
+            return jsonify({
+                "sucesso": True,
+                "ja_processado": True,
+                "cristais_creditados": 0,
+                "novo_saldo_cristais": saldo,
+            }), 200
 
         mem = carregar_memoria(current_user_id) or {}
         saldo_atual = int(mem.get("saldo_cristais", 0))
@@ -1010,7 +1011,8 @@ def listar_clas():
     """Retorna todos os clãs ativos (público)."""
     try:
         if mongo_db is None:
-            return jsonify([]), 200
+            logger.error("❌ listar_clas: mongo_db indisponível")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cursor = mongo_db["Clas"].find(
             {"ativo": True},
             {"_id": 1, "nome": 1, "descricao": 1, "emblema": 1, "cor": 1,
@@ -1026,7 +1028,7 @@ def listar_clas():
         return jsonify(clans), 200
     except Exception as e:
         logger.error(f"Erro ao listar clãs: {e}")
-        return jsonify([]), 200
+        return jsonify({"erro": "Falha ao buscar clãs. Tente novamente."}), 500
 
 
 @api_bp.route('/cla/entrar', methods=['POST'])
@@ -1249,11 +1251,14 @@ def get_cla(current_user_id, cla_id):
 def get_membros_cla(current_user_id, cla_id):
     """Retorna os membros de um clã com dados básicos do usuário."""
     try:
-        if mongo_db is None or not ObjectId.is_valid(cla_id):
-            return jsonify([]), 200
+        if not ObjectId.is_valid(cla_id):
+            return jsonify({"erro": "ID do clã inválido"}), 400
+        if mongo_db is None:
+            logger.error(f"❌ get_membros_cla: mongo_db indisponível para clã {cla_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cla = mongo_db["Clas"].find_one({"_id": ObjectId(cla_id)}, {"membros": 1})
         if not cla:
-            return jsonify([]), 200
+            return jsonify({"erro": "Clã não encontrado"}), 404
 
         membros_raw = cla.get("membros", [])
         membros_out = []
@@ -1286,7 +1291,7 @@ def get_membros_cla(current_user_id, cla_id):
         return jsonify(membros_out), 200
     except Exception as e:
         logger.error(f"Erro ao buscar membros do clã {cla_id}: {e}")
-        return jsonify([]), 200
+        return jsonify({"erro": "Falha ao buscar membros. Tente novamente."}), 500
 
 
 @api_bp.route('/cla/<cla_id>/chat', methods=['GET'])
@@ -1295,7 +1300,8 @@ def get_chat_cla(current_user_id, cla_id):
     """Retorna as últimas 100 mensagens do chat do clã."""
     try:
         if mongo_db is None:
-            return jsonify([]), 200
+            logger.error(f"❌ get_chat_cla: mongo_db indisponível para clã {cla_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cursor = mongo_db["chat_cla"].find(
             {"cla_id": cla_id},
             {"_id": 1, "cla_id": 1, "user_id": 1, "user_name": 1, "message": 1, "created_at": 1}
@@ -1307,7 +1313,7 @@ def get_chat_cla(current_user_id, cla_id):
         return jsonify(msgs), 200
     except Exception as e:
         logger.error(f"Erro ao buscar chat do clã {cla_id}: {e}")
-        return jsonify([]), 200
+        return jsonify({"erro": "Falha ao carregar chat. Tente novamente."}), 500
 
 
 # ===================================================
@@ -1617,7 +1623,8 @@ def listar_atividades(current_user_id):
     """Retorna o histórico de atividades registradas pelo usuário."""
     try:
         if mongo_db is None:
-            return jsonify({"atividades": []}), 200
+            logger.error(f"❌ listar_atividades: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cursor = mongo_db["atividades"].find(
             {"user_id": current_user_id},
             {"_id": 0}
@@ -1625,7 +1632,7 @@ def listar_atividades(current_user_id):
         return jsonify({"atividades": list(cursor)}), 200
     except Exception as e:
         logger.error(f"Erro ao listar atividades de {current_user_id}: {e}")
-        return jsonify({"atividades": []}), 200
+        return jsonify({"erro": "Falha ao buscar atividades. Tente novamente."}), 500
 
 def _mapear_categoria_missao(tipo_atividade: str) -> str:
     """
@@ -1771,8 +1778,10 @@ def registrar_atividade(current_user_id):
             "created_at":      datetime.now().isoformat()
         }
 
-        if mongo_db is not None:
-            mongo_db["atividades"].insert_one(doc_atividade)
+        if mongo_db is None:
+            logger.error(f"❌ registrar_atividade bloqueado: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente em instantes."}), 503
+        mongo_db["atividades"].insert_one(doc_atividade)
 
         resultado_xp = {}
         if xp_atividade > 0:
@@ -1804,7 +1813,8 @@ def listar_produtos():
     """Lista todos os produtos disponíveis na loja física (público)."""
     try:
         if mongo_db is None:
-            return jsonify([]), 200
+            logger.error("❌ listar_produtos: mongo_db indisponível")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         campos = {
             "_id": 1, "nome": 1, "marca": 1, "preco_aura": 1, "preco_original": 1,
             "custo_moedas": 1, "nivel_minimo": 1, "imagem_url": 1, "categoria": 1,
@@ -1820,7 +1830,7 @@ def listar_produtos():
         return jsonify(docs), 200
     except Exception as e:
         logger.error(f"Erro ao listar produtos: {e}")
-        return jsonify([]), 200
+        return jsonify({"erro": "Falha ao carregar produtos. Tente novamente."}), 500
 
 @api_bp.route('/pedidos', methods=['GET'])
 @token_required
@@ -1828,7 +1838,8 @@ def listar_pedidos(current_user_id):
     """Retorna o histórico de pedidos do usuário logado."""
     try:
         if mongo_db is None:
-            return jsonify({"pedidos": []}), 200
+            logger.error(f"❌ listar_pedidos: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cursor = mongo_db["pedidos"].find(
             {"user_id": current_user_id}
         ).sort("created_at", -1).limit(50)
@@ -1839,7 +1850,7 @@ def listar_pedidos(current_user_id):
         return jsonify({"pedidos": pedidos}), 200
     except Exception as e:
         logger.error(f"Erro ao listar pedidos de {current_user_id}: {e}")
-        return jsonify({"pedidos": []}), 200
+        return jsonify({"erro": "Falha ao buscar pedidos. Tente novamente."}), 500
 
 # ===================================================
 # 🚚 FRETE — COTAÇÃO MELHOR ENVIO
@@ -2114,7 +2125,8 @@ def listar_amigos(current_user_id):
     """Retorna a lista de amigos confirmados do usuário logado."""
     try:
         if mongo_db is None:
-            return jsonify({"amigos": []}), 200
+            logger.error(f"❌ listar_amigos: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
 
         relacoes = list(mongo_db["amizades"].find({
             "$or": [
@@ -2149,7 +2161,7 @@ def listar_amigos(current_user_id):
         return jsonify({"amigos": amigos}), 200
     except Exception as e:
         logger.error(f"Erro ao listar amigos de {current_user_id}: {e}")
-        return jsonify({"amigos": []}), 200
+        return jsonify({"erro": "Falha ao buscar amigos. Tente novamente."}), 500
 
 
 @api_bp.route('/social/notificacoes', methods=['GET'])
@@ -2158,7 +2170,8 @@ def listar_notificacoes(current_user_id):
     """Retorna as últimas 30 notificações do usuário, ordenadas por data desc."""
     try:
         if mongo_db is None:
-            return jsonify({"notificacoes": [], "nao_lidas": 0}), 200
+            logger.error(f"❌ listar_notificacoes: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
 
         cursor = mongo_db["notificacoes"].find(
             {"user_id": current_user_id}
@@ -2179,7 +2192,7 @@ def listar_notificacoes(current_user_id):
         return jsonify({"notificacoes": notifs, "nao_lidas": nao_lidas}), 200
     except Exception as e:
         logger.error(f"Erro ao listar notificações de {current_user_id}: {e}")
-        return jsonify({"notificacoes": [], "nao_lidas": 0}), 200
+        return jsonify({"erro": "Falha ao buscar notificações. Tente novamente."}), 500
 
 
 @api_bp.route('/social/notificacoes/ler', methods=['POST'])
@@ -2188,7 +2201,8 @@ def marcar_notificacoes_lidas(current_user_id):
     """Marca todas as notificações do usuário como lidas."""
     try:
         if mongo_db is None:
-            return jsonify({"sucesso": True}), 200
+            logger.error(f"❌ marcar_notificacoes_lidas: mongo_db indisponível para {current_user_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         mongo_db["notificacoes"].update_many(
             {"user_id": current_user_id, "lida": False},
             {"$set": {"lida": True}}
@@ -2410,7 +2424,8 @@ def listar_evidencias(current_user_id, desafio_id):
     """Retorna as evidências de um desafio (feed social)."""
     try:
         if mongo_db is None:
-            return jsonify({"evidencias": []}), 200
+            logger.error(f"❌ listar_evidencias: mongo_db indisponível para desafio {desafio_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         cursor = mongo_db["evidencias_desafio"].find(
             {"desafio_id": desafio_id}
         ).sort("created_at", -1).limit(50)
@@ -2421,7 +2436,7 @@ def listar_evidencias(current_user_id, desafio_id):
         return jsonify({"evidencias": evs}), 200
     except Exception as e:
         logger.error(f"Erro ao listar evidências: {e}")
-        return jsonify({"evidencias": []}), 200
+        return jsonify({"erro": "Falha ao carregar evidências. Tente novamente."}), 500
 
 
 @api_bp.route('/cla/desafio/<desafio_id>/ranking', methods=['GET'])
@@ -2433,7 +2448,8 @@ def ranking_desafio(current_user_id, desafio_id):
     """
     try:
         if mongo_db is None:
-            return jsonify({"ranking": [], "desafio_titulo": ""}), 200
+            logger.error(f"❌ ranking_desafio: mongo_db indisponível para desafio {desafio_id}")
+            return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
 
         try:
             desafio = mongo_db["desafios_cla"].find_one({"_id": ObjectId(desafio_id)})
@@ -2492,7 +2508,7 @@ def ranking_desafio(current_user_id, desafio_id):
 
     except Exception as e:
         logger.error(f"Erro ao buscar ranking do desafio {desafio_id}: {e}")
-        return jsonify({"ranking": [], "desafio_titulo": ""}), 200
+        return jsonify({"erro": "Falha ao carregar ranking. Tente novamente."}), 500
 
 
 @api_bp.route('/cla/desafio/<desafio_id>/excluir', methods=['DELETE'])
