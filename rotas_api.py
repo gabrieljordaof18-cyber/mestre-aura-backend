@@ -2764,6 +2764,21 @@ def admin_atualizar_status_pedido(pedido_id):
             return jsonify({"erro": "Pedido não encontrado"}), 404
 
         logger.info(f"✅ Admin atualizou pedido {pedido_id} → {novo_status}")
+
+        # Notificação ao usuário para cada status
+        _MSGS_STATUS = {
+            "ENVIADO_FORNECEDOR": "📦 Seu pedido foi encaminhado para o fornecedor e está sendo preparado para envio.",
+            "RASTREIO_GERADO":    f"🚚 Seu pedido está a caminho! Código de rastreio: {codigo_rastreio}." if codigo_rastreio else "🚚 Seu pedido está a caminho! Consulte o código de rastreio em Meus Pedidos.",
+            "ENTREGUE":           "🎉 Seu pedido foi entregue! Esperamos que você aproveite.",
+            "CANCELADO":          "❌ Seu pedido foi cancelado. Entre em contato com o suporte se tiver dúvidas.",
+        }
+        msg_notif = _MSGS_STATUS.get(novo_status)
+        if msg_notif:
+            p = mongo_db["pedidos"].find_one({"_id": ObjectId(pedido_id)}, {"user_id": 1})
+            if p and p.get("user_id"):
+                _criar_notificacao(p["user_id"], "mercado", msg_notif,
+                                   {"pedido_id": pedido_id, "acao": "abrir_pedido"})
+
         return jsonify({"sucesso": True, "status": novo_status}), 200
 
     except Exception as e:
@@ -2889,6 +2904,15 @@ def webhook_asaas():
                     {"$set": update_fields}
                 )
                 logger.info(f"✅ Pedido {payment_id} ({tipo_pedido}) atualizado para PAGO no Atlas.")
+
+                # Notifica o usuário sobre confirmação de pagamento (somente marketplace)
+                if tipo_pedido == "marketplace":
+                    uid = pedido.get("user_id", "")
+                    pid = str(pedido.get("_id", ""))
+                    if uid and pid:
+                        _criar_notificacao(uid, "mercado",
+                                           "✅ Pagamento confirmado! Seu pedido já está sendo preparado.",
+                                           {"pedido_id": pid, "acao": "abrir_pedido"})
             else:
                 logger.warning(f"⚠️ Webhook Asaas: pedido {payment_id} não encontrado no Atlas.")
 

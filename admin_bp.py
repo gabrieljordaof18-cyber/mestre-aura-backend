@@ -29,6 +29,23 @@ from data_manager import mongo_db
 
 logger = logging.getLogger("AURA_ADMIN")
 
+
+def _notificar_pedido(user_id: str, pedido_id: str, mensagem: str):
+    """Insere notificação de mercado sem quebrar o fluxo principal."""
+    if not user_id:
+        return
+    try:
+        mongo_db["notificacoes"].insert_one({
+            "user_id":    user_id,
+            "tipo":       "mercado",
+            "mensagem":   mensagem,
+            "meta":       {"pedido_id": pedido_id, "acao": "abrir_pedido"},
+            "lida":       False,
+            "created_at": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Erro ao criar notificação do pedido {pedido_id}: {e}")
+
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
@@ -827,6 +844,10 @@ def encaminhar_fornecedor(pedido_id):
             }}
         )
         logger.info(f"📦 Pedido {pedido_id} encaminhado ao fornecedor.")
+        p = mongo_db["pedidos"].find_one({"_id": ObjectId(pedido_id)}, {"user_id": 1})
+        if p and p.get("user_id"):
+            _notificar_pedido(p["user_id"], pedido_id,
+                              "📦 Seu pedido foi encaminhado para o fornecedor e está sendo preparado para envio.")
     except Exception as e:
         logger.error(f"Erro ao encaminhar pedido {pedido_id}: {e}")
         return redirect(f"/admin/pedidos?erro=falha_encaminhar&pedido={pedido_id}")
@@ -854,6 +875,10 @@ def inserir_rastreio(pedido_id):
             }}
         )
         logger.info(f"📮 Rastreio '{codigo}' salvo para pedido {pedido_id}.")
+        p = mongo_db["pedidos"].find_one({"_id": ObjectId(pedido_id)}, {"user_id": 1})
+        if p and p.get("user_id"):
+            _notificar_pedido(p["user_id"], pedido_id,
+                              f"🚚 Seu pedido está a caminho! Código de rastreio: {codigo}.")
     except Exception as e:
         logger.error(f"Erro ao inserir rastreio no pedido {pedido_id}: {e}")
         return redirect(f"/admin/pedidos?erro=falha_rastreio&pedido={pedido_id}")
@@ -877,6 +902,10 @@ def marcar_entregue(pedido_id):
             }}
         )
         logger.info(f"✅ Pedido {pedido_id} marcado como ENTREGUE.")
+        p = mongo_db["pedidos"].find_one({"_id": ObjectId(pedido_id)}, {"user_id": 1})
+        if p and p.get("user_id"):
+            _notificar_pedido(p["user_id"], pedido_id,
+                              "🎉 Seu pedido foi entregue! Esperamos que você aproveite.")
     except Exception as e:
         logger.error(f"Erro ao marcar pedido {pedido_id} como entregue: {e}")
         return redirect(f"/admin/pedidos?erro=falha_entregue&pedido={pedido_id}")
