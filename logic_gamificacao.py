@@ -52,11 +52,57 @@ CRISTAIS_POR_LEVEL_UP = 25
 # 🎮 NÚCLEO DE GAMIFICAÇÃO (LEVELS E MISSÕES)
 # ======================================================
 
+# Mapa esporte_id → (título imersivo, descrição da missão, ícone)
+_MISSAO_ESPORTE: Dict[str, tuple] = {
+    "musculacao":  ("Força Total",         "Complete 1 treino de musculação hoje",             "Dumbbell"),
+    "corrida":     ("Passada Livre",        "Corra ou caminhe rápido por 5km hoje",             "Activity"),
+    "ciclismo":    ("Rota Aberta",          "Pedale por 30 minutos hoje",                       "Bike"),
+    "natacao":     ("Águas Profundas",      "Nade por 30 minutos hoje",                         "Waves"),
+    "futebol":     ("Jogo Completo",        "Jogue ou treine futebol por 45 minutos hoje",      "Play"),
+    "basquete":    ("Quadra Total",         "Jogue ou treine basquete por 45 minutos hoje",     "Trophy"),
+    "volei":       ("Saque Perfeito",       "Jogue ou treine vôlei por 45 minutos hoje",        "Play"),
+    "handebol":    ("Gol e Defesa",         "Jogue ou treine handebol por 45 minutos hoje",     "Play"),
+    "jiujitsu":    ("Tatame do Guerreiro",  "Treine 1 sessão de Jiu-Jitsu hoje",                "Zap"),
+    "boxe":        ("Rounds na Lona",       "Treine 1 sessão de Muay Thai/Boxe hoje",           "Zap"),
+    "tenis":       ("Ace no Saque",         "Jogue ou treine tênis por 45 minutos hoje",        "Baseline"),
+    "beach_tenis": ("Areia e Vitória",      "Jogue ou treine beach tennis por 45 minutos hoje", "Baseline"),
+    "crossfit":    ("WOD do Dia",           "Complete 1 WOD (treino do dia) de Crossfit hoje",  "Flame"),
+    "ballet":      ("Passo Perfeito",       "Complete 1 aula ou treino de ballet hoje",         "Music"),
+    "yoga":        ("Equilíbrio Total",     "Pratique 30 minutos de yoga hoje",                 "Heart"),
+}
+
+# Mapa tipo_desafio → (título, descrição) — texto da 4ª missão vinculada ao desafio ativo
+_MISSAO_DESAFIO_TIPO: Dict[str, tuple] = {
+    "emagrecimento": ("Queima do Dia",      "Complete o treino e siga o protocolo alimentar do desafio '{titulo}' hoje"),
+    "hipertrofia":   ("Sessão de Hipertrofia", "Complete o treino de hipertrofia do desafio '{titulo}' hoje"),
+    "saude":         ("Protocolo de Saúde", "Siga o protocolo completo do desafio '{titulo}' hoje"),
+    "performance":   ("Treino de Elite",    "Execute o treino de performance do desafio '{titulo}' hoje"),
+    "reabilitacao":  ("Recuperação Ativa",  "Complete a sessão de reabilitação do desafio '{titulo}' hoje"),
+}
+
+
+def _construir_missao(raw: Dict[str, Any], hoje_str: str) -> Dict[str, Any]:
+    """Converte um dict raw de missão no formato padronizado."""
+    missao = {
+        "id":           raw.get("id"),
+        "titulo":       raw.get("titulo") or "Missão Diária",
+        "descricao":    raw.get("descricao", "Complete o desafio para evoluir"),
+        "xp":           raw.get("xp", 100),
+        "categoria":    raw.get("categoria", "geral"),
+        "icone":        raw.get("icone", "Target"),
+        "concluida":    False,
+        "progresso_pct": 0,
+        "data_geracao": hoje_str,
+    }
+    if raw.get("meta_duracao_min"):
+        missao["meta_duracao_min"] = int(raw["meta_duracao_min"])
+    return missao
+
+
 def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
     """
-    Gera ou recupera as 3 missões diárias do usuário.
-    Sincronizado com a coleção 'missoes' do MongoDB Atlas.
-    [AURA SYNC] Títulos e Ícones ajustados para o novo layout do Perfil.jsx e Home.
+    Gera ou recupera as missões diárias do usuário.
+    Estrutura fixa: 2 base (saúde + descanso) + 1 treino personalizado por esporte + 1 desafio.
     """
     if not user_id: return []
 
@@ -65,68 +111,80 @@ def gerar_missoes_diarias(user_id: str) -> List[Dict[str, Any]]:
 
     hoje_str = datetime.now().date().isoformat()
     gamificacao = memoria.get("gamificacao", {})
-    
+
     ultima_geracao = str(gamificacao.get("ultima_geracao_missoes", "")).split("T")[0]
     missoes_atuais = gamificacao.get("missoes_ativas", [])
 
-    # Se já gerou missões hoje, retorna as mesmas para manter consistência
     if ultima_geracao == hoje_str and missoes_atuais:
         return missoes_atuais
 
-    pool_missoes = []
+    # ── Missão 1: saúde/hidratação (fixa) ────────────────────────────────────
+    m1 = {"id": "m_h2o",  "titulo": "Caminho da Água",
+          "descricao": "Ingerir 3.5L de água hoje",
+          "xp": 100, "categoria": "saude", "icone": "Zap"}
+
+    # ── Missão 2: descanso/sono (fixa) ───────────────────────────────────────
+    m2 = {"id": "m_sono", "titulo": "Mestre do Descanso",
+          "descricao": "Garantir 8h de sono profundo",
+          "xp": 120, "categoria": "descanso", "icone": "Moon", "meta_duracao_min": 480}
+
+    # ── Missão 3: treino personalizado por esporte ────────────────────────────
+    esportes = [e for e in memoria.get("esportes_favoritos", []) if e in _MISSAO_ESPORTE]
+    if esportes:
+        esporte_hoje = random.choice(esportes)
+        titulo_esp, desc_esp, icone_esp = _MISSAO_ESPORTE[esporte_hoje]
+        m3 = {"id": f"m_esporte_{esporte_hoje}", "titulo": titulo_esp,
+              "descricao": desc_esp, "xp": 100, "categoria": "treino", "icone": icone_esp}
+    else:
+        m3 = {"id": "m_hybrid", "titulo": "Protocolo Híbrido",
+              "descricao": "Musculação + 15min de Cardio",
+              "xp": 100, "categoria": "treino", "icone": "Flame"}
+
+    # ── Missão 4: desafio ativo ───────────────────────────────────────────────
+    m4 = None
     if mongo_db is not None:
         try:
-            # Buscamos as missões ativas no Atlas
-            cursor = mongo_db["missoes"].find({"ativo": True}, {"_id": 0})
-            pool_missoes = list(cursor)
+            from bson.objectid import ObjectId
+            inscricao = mongo_db["inscricoes_desafio"].find_one(
+                {"user_id": user_id, "status_pagamento": "PAGO", "status_desafio": "em_andamento"},
+                {"desafio_id": 1}
+            )
+            if inscricao:
+                desafio_id = inscricao.get("desafio_id", "")
+                desafio = None
+                if desafio_id and ObjectId.is_valid(desafio_id):
+                    desafio = mongo_db["desafios"].find_one(
+                        {"_id": ObjectId(desafio_id)}, {"titulo": 1, "tipo": 1}
+                    )
+                if desafio:
+                    tipo  = desafio.get("tipo", "performance")
+                    titulo_desafio = desafio.get("titulo", "seu desafio")
+                    tpl = _MISSAO_DESAFIO_TIPO.get(tipo, _MISSAO_DESAFIO_TIPO["performance"])
+                    m4 = {"id": "m_desafio_ativo", "titulo": tpl[0],
+                          "descricao": tpl[1].format(titulo=titulo_desafio),
+                          "xp": 100, "categoria": "desafio", "icone": "Trophy"}
         except Exception as e:
-            logger.error(f"❌ Erro ao acessar coleção 'missoes': {e}")
+            logger.error(f"❌ Erro ao buscar desafio ativo para missão: {e}")
 
-    # [AURA SYNC] Fallback com títulos imersivos (Substituindo o genérico 'Desafio Aura')
-    if not pool_missoes:
-        pool_missoes = [
-            {"id": "m_h2o",    "titulo": "Caminho da Água",    "descricao": "Ingerir 3.5L de água hoje",        "xp": 100, "categoria": "saude",   "icone": "Zap"},
-            {"id": "m_hybrid", "titulo": "Protocolo Híbrido",  "descricao": "Musculação + 15min de Cardio",     "xp": 150, "categoria": "treino",  "icone": "Flame"},
-            {"id": "m_mov",    "titulo": "Nômade Moderno",     "descricao": "Bater a meta de 10.000 passos",    "xp": 100, "categoria": "treino",  "icone": "Activity"},
-            {"id": "m_sono",   "titulo": "Mestre do Descanso", "descricao": "Garantir 8h de sono profundo",     "xp": 120, "categoria": "descanso","icone": "Moon",  "meta_duracao_min": 480},
-            {"id": "m_foco",   "titulo": "Mente Blindada",     "descricao": "Completar 10min de Meditação",     "xp": 80,  "categoria": "mente",   "icone": "Brain", "meta_duracao_min": 10},
-        ]
+    if m4 is None:
+        m4 = {"id": "m_desafio_convite", "titulo": "Entre em um Desafio!",
+              "descricao": "Você ainda não possui desafio ativo. Vá até a seção Performance e entre em um desafio agora mesmo!",
+              "xp": 0, "categoria": "desafio", "icone": "Trophy"}
 
-    try:
-        # Seleção aleatória de 3 desafios únicos
-        selecionadas = random.sample(pool_missoes, min(3, len(pool_missoes)))
-    except ValueError:
-        selecionadas = pool_missoes
+    pool_raw = [m1, m2, m3, m4]
+    missoes_ativas = [_construir_missao(m, hoje_str) for m in pool_raw]
 
-    missoes_ativas = []
-    for m in selecionadas:
-        titulo_final = m.get("titulo") or "Missão Diária"
-        missao = {
-            "id": m.get("id"),
-            "titulo": titulo_final,
-            "descricao": m.get("descricao", "Complete o desafio para evoluir"),
-            "xp": m.get("xp", 100),
-            "categoria": m.get("categoria", "geral"),
-            "icone": m.get("icone", "Target"),
-            "concluida": False,
-            "progresso_pct": 0,
-            "data_geracao": hoje_str,
-        }
-        # Missions with duration targets track partial completion
-        if m.get("meta_duracao_min"):
-            missao["meta_duracao_min"] = int(m["meta_duracao_min"])
-        missoes_ativas.append(missao)
-
-    # Atualiza a memória local antes de salvar no Atlas
-    if "gamificacao" not in memoria: 
+    if "gamificacao" not in memoria:
         memoria["gamificacao"] = {}
-    
+
     memoria["gamificacao"]["missoes_ativas"] = missoes_ativas
     memoria["gamificacao"]["ultima_geracao_missoes"] = datetime.now().isoformat()
-    
+
     salvar_memoria(user_id, memoria)
-    logger.info(f"🎲 [GAMIFICAÇÃO] Ciclo de missões renovado com novos títulos para {user_id}")
-    
+    logger.info(f"🎲 [GAMIFICAÇÃO] Missões renovadas para {user_id} "
+                f"(esporte={esportes[0] if esportes else 'fallback'}, "
+                f"desafio={'ativo' if m4['id'] == 'm_desafio_ativo' else 'convite'})")
+
     return missoes_ativas
 
 def aplicar_xp(user_id: str, quantidade: int) -> Dict[str, Any]:
