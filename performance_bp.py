@@ -11,6 +11,7 @@ Fluxo financeiro:
 
 import os
 import logging
+import requests as _requests
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from bson.objectid import ObjectId
@@ -664,6 +665,7 @@ def inscrever_desafio(current_user_id, desafio_id):
         doc_insc["valor_aura"]          = valor_aura
         doc_insc["valor_profissional"]  = valor_prof
         doc_insc["data_inicio"]         = desafio.get("data_inicio", "")
+        doc_insc["metodo_pagamento"]    = metodo
         doc_insc["consentimento"] = {
             "aceito":       True,
             "versao_termo": str(dados_req.get("versao_termo", "v1")),
@@ -1095,6 +1097,76 @@ def status_inscricao(current_user_id, inscricao_id):
 
     except Exception as e:
         logger.error(f"[PERF] Erro status_inscricao: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@performance_bp.route("/inscricoes/<inscricao_id>/retomar_pagamento", methods=["GET"])
+@_token_required
+def retomar_pagamento_desafio(current_user_id, inscricao_id):
+    """
+    Retorna dados do pagamento existente (QR PIX ou link cartão) sem criar nova cobrança.
+    Disponível apenas enquanto status_pagamento == PENDING.
+    """
+    try:
+        if mongo_db is None or not ObjectId.is_valid(inscricao_id):
+            return jsonify({"erro": "Inválido"}), 400
+
+        inscricao = mongo_db["inscricoes_desafio"].find_one(
+            {"_id": ObjectId(inscricao_id), "user_id": current_user_id}
+        )
+        if not inscricao:
+            return jsonify({"erro": "Inscrição não encontrada"}), 404
+
+        if inscricao.get("status_pagamento") == "PAGO":
+            return jsonify({"erro": "Pagamento já confirmado"}), 409
+
+        asaas_id = inscricao.get("asaas_id", "")
+        if not asaas_id:
+            return jsonify({"erro": "Dados de pagamento não encontrados para esta inscrição"}), 404
+
+        headers = {
+            "Content-Type": "application/json",
+            "access_token": os.getenv("ASAAS_ACCESS_TOKEN", ""),
+        }
+        metodo = inscricao.get("metodo_pagamento", "pix")
+
+        if metodo == "pix":
+            resp = _requests.get(
+                f"https://www.asaas.com/api/v3/payments/{asaas_id}/pixQrCode",
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                qr = resp.json()
+                return jsonify({
+                    "inscricao_id": inscricao_id,
+                    "tipo": "pix",
+                    "payload_pix": qr.get("payload"),
+                    "imagem_qr":   qr.get("encodedImage"),
+                    "asaas_id":    asaas_id,
+                }), 200
+            # QR vencido ou indisponível — cai no fallback abaixo
+
+        # Cartão ou fallback de PIX sem QR: busca dados do pagamento para pegar invoiceUrl
+        resp2 = _requests.get(
+            f"https://www.asaas.com/api/v3/payments/{asaas_id}",
+            headers=headers,
+            timeout=10,
+        )
+        if resp2.status_code == 200:
+            data = resp2.json()
+            return jsonify({
+                "inscricao_id":   inscricao_id,
+                "tipo":           data.get("billingType", "cartao").lower(),
+                "link_pagamento": data.get("invoiceUrl"),
+                "asaas_id":       asaas_id,
+            }), 200
+
+        logger.warning(f"[PERF] Asaas retornou {resp2.status_code} para pagamento {asaas_id}")
+        return jsonify({"erro": "Não foi possível recuperar os dados do pagamento no gateway"}), 404
+
+    except Exception as e:
+        logger.error(f"[PERF] Erro retomar_pagamento: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
