@@ -1346,7 +1346,23 @@ def registrar_progresso(current_user_id, inscricao_id):
         except Exception:
             pass
 
-        dias_completos = inscricao.get("progresso", {}).get("dias_completos", 0) + 1
+        progresso_atual = inscricao.get("progresso", {})
+        ultimo_registro = progresso_atual.get("ultimo_registro")
+        hoje = datetime.now().date().isoformat()
+
+        ja_registrou_hoje = False
+        if ultimo_registro:
+            try:
+                ja_registrou_hoje = datetime.fromisoformat(ultimo_registro).date().isoformat() == hoje
+            except Exception:
+                pass
+
+        dias_completos = progresso_atual.get("dias_completos", 0)
+        treinos_total = progresso_atual.get("treinos_total", 0) + 1
+
+        if not ja_registrou_hoje:
+            dias_completos += 1
+
         percentual = round((dias_completos / duracao) * 100, 1)
         agora = datetime.now().isoformat()
 
@@ -1355,13 +1371,20 @@ def registrar_progresso(current_user_id, inscricao_id):
             {"_id": ObjectId(inscricao_id)},
             {"$set": {
                 "progresso.dias_completos": dias_completos,
+                "progresso.treinos_total": treinos_total,
                 "progresso.percentual": percentual,
                 "progresso.ultimo_registro": agora,
                 "status_desafio": novo_status,
             }}
         )
 
-        return jsonify({"sucesso": True, "dias_completos": dias_completos, "percentual": percentual}), 200
+        return jsonify({
+            "sucesso": True,
+            "dias_completos": dias_completos,
+            "treinos_total": treinos_total,
+            "percentual": percentual,
+            "mesmo_dia": ja_registrou_hoje,
+        }), 200
 
     except Exception as e:
         logger.error(f"[PERF] Erro registrar_progresso: {e}")
