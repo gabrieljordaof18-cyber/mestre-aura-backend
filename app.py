@@ -72,6 +72,22 @@ with app.app_context():
     for rule in app.url_map.iter_rules():
         logger.info(f"Rota: {rule.rule} | Métodos: {rule.methods}")
 
+# ──────────────────────────────────────────────────────────────
+# Scheduler de tarefas agendadas
+# Chamado aqui (nível de módulo) para que o Gunicorn inicie o
+# scheduler em cada worker. O lock MongoDB em scheduler.py
+# garante que apenas 1 worker execute cada job por vez.
+# Em Flask dev mode com reloader, o guard WERKZEUG_RUN_MAIN
+# evita iniciar duas instâncias no processo pai.
+# ──────────────────────────────────────────────────────────────
+import os as _os
+if _os.getenv("WERKZEUG_RUN_MAIN") != "false":  # roda em prod e no child do reloader
+    try:
+        from scheduler import iniciar_scheduler
+        iniciar_scheduler()
+    except Exception as _e:
+        logger.error(f"❌ Falha ao iniciar scheduler: {_e}")
+
 # 4. Tratamento Global de Erros
 @app.errorhandler(404)
 def not_found(e):

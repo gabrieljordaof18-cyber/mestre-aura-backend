@@ -495,10 +495,69 @@ def get_status_jogador(current_user_id):
             "tipo_perfil":        dados.get("tipo_perfil", "atleta"),
             # Trial Plus gratuito
             "trial_usado":        dados.get("trial_usado", False),
+            # Preferências de notificação push (corrige bug: antes nunca eram retornadas)
+            "notificacoes_preferences": dados.get("notificacoes_preferences", {
+                "treino_lembretes":     True,
+                "cla_chat":             True,
+                "mercado_ofertas":      False,
+                "atualizacoes_sistema": True
+            }),
         })
     except Exception as e:
         logger.error(f"Erro status para o user {current_user_id}: {e}")
         return jsonify({"erro": "Falha ao sincronizar perfil"}), 500
+
+
+# ===================================================
+# 🔔 PUSH NOTIFICATIONS — FCM Token & Preferências
+# ===================================================
+
+@api_bp.route('/usuario/fcm_token', methods=['POST'])
+@token_required
+def registrar_fcm_token(current_user_id):
+    """Registra ou atualiza o FCM token do dispositivo do usuário autenticado."""
+    body = request.get_json(silent=True) or {}
+    token = str(body.get("token", "")).strip()
+    if not token:
+        return jsonify({"erro": "Campo 'token' obrigatório."}), 400
+    try:
+        # $addToSet garante idempotência — não duplica o mesmo token
+        mongo_db["usuarios"].update_one(
+            {"_id": ObjectId(current_user_id)},
+            {"$addToSet": {"fcm_tokens": token}}
+        )
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao registrar FCM token para {current_user_id}: {e}")
+        return jsonify({"erro": "Falha ao salvar token."}), 500
+
+
+@api_bp.route('/usuario/preferencias', methods=['POST'])
+@token_required
+def salvar_preferencias_notificacao(current_user_id):
+    """Persiste as preferências de notificação push do usuário."""
+    body = request.get_json(silent=True) or {}
+    prefs_recebidas = body.get("notificacoes", {})
+
+    CHAVES_VALIDAS = {"treino_lembretes", "cla_chat", "mercado_ofertas", "atualizacoes_sistema"}
+    prefs_filtradas = {
+        k: bool(v)
+        for k, v in prefs_recebidas.items()
+        if k in CHAVES_VALIDAS
+    }
+    if not prefs_filtradas:
+        return jsonify({"erro": "Nenhuma preferência válida recebida."}), 400
+
+    try:
+        update = {f"notificacoes_preferences.{k}": v for k, v in prefs_filtradas.items()}
+        mongo_db["usuarios"].update_one(
+            {"_id": ObjectId(current_user_id)},
+            {"$set": update}
+        )
+        return jsonify({"sucesso": True}), 200
+    except Exception as e:
+        logger.error(f"Erro ao salvar preferências de {current_user_id}: {e}")
+        return jsonify({"erro": "Falha ao salvar preferências."}), 500
 
 # ===================================================
 # 🎓 TUTORIAL / GUIDED TOUR
@@ -643,12 +702,12 @@ def validar_cupom_checkout(current_user_id):
             return jsonify({"valido": False, "erro": "Código vazio."}), 400
 
         if codigo == "AURA12":
-            return jsonify({"valido": True, "desconto": 0.12, "descricao": "12% OFF — Parceiros Aura"})
+            return jsonify({"valido": True, "desconto": 0.07, "descricao": "7% OFF — Parceiros Aura"})
 
         if codigo == "AURA15":
             user_data = carregar_memoria(current_user_id)
             if "AURA15" in user_data.get("cupons_ativos", []):
-                return jsonify({"valido": True, "desconto": 0.15, "descricao": "15% OFF — Cupom Premium"})
+                return jsonify({"valido": True, "desconto": 0.10, "descricao": "10% OFF — Cupom Premium"})
             return jsonify({"valido": False, "erro": "Adquira o cupom AURA15 no Mercado de Cristais antes de usá-lo."})
 
         return jsonify({"valido": False, "erro": "Cupom não reconhecido."})
@@ -1828,7 +1887,8 @@ def listar_produtos():
             logger.error("❌ listar_produtos: mongo_db indisponível")
             return jsonify({"erro": "Serviço temporariamente indisponível. Tente novamente."}), 503
         campos = {
-            "_id": 1, "nome": 1, "marca": 1, "preco_aura": 1, "preco_original": 1,
+            "_id": 1, "nome": 1, "marca": 1,
+            "preco_cartao": 1, "preco_pix": 1, "preco_aura": 1, "preco_original": 1,
             "custo_moedas": 1, "nivel_minimo": 1, "imagem_url": 1, "categoria": 1,
             "estoque": 1, "peso_kg": 1, "largura_cm": 1, "altura_cm": 1,
             "comprimento_cm": 1, "destaque": 1, "descricao": 1, "parceiro": 1,
@@ -1903,7 +1963,7 @@ def rota_cotar_frete(current_user_id):
                     "width": float(prod_doc.get("largura_cm") if prod_doc else item.get("width", 15)),
                     "height": float(prod_doc.get("altura_cm") if prod_doc else item.get("height", 10)),
                     "length": float(prod_doc.get("comprimento_cm") if prod_doc else item.get("length", 20)),
-                    "insurance_value": float(prod_doc.get("preco_aura") if prod_doc else item.get("insurance_value", 10))
+                    "insurance_value": float(prod_doc.get("preco_cartao") or prod_doc.get("preco_aura") if prod_doc else item.get("insurance_value", 10))
                 }
                 produtos_detalhes.append(item_traduzido)
             except Exception as inner_e:

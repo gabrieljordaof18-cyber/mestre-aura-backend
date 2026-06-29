@@ -122,8 +122,19 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         # --- 9. SISTEMA ---
         "configuracoes_sistema": {
             "onboarding_completo": False,
-            "versao_schema": "3.3.0-Native", # Atualizado para nova arquitetura Apple
+            "versao_schema": "3.4.0-Push",
             "notificacoes_push": True
+        },
+
+        # --- 10. PUSH NOTIFICATIONS ---
+        # fcm_tokens: lista para suportar múltiplos dispositivos por conta.
+        # Tokens inválidos (UNREGISTERED) são removidos automaticamente pelo logic_push.py.
+        "fcm_tokens": [],
+        "notificacoes_preferences": {
+            "treino_lembretes":   True,   # Missões diárias pendentes
+            "cla_chat":           True,   # Atualizações do clã
+            "mercado_ofertas":    False,  # Ofertas do Mercado (opt-in)
+            "atualizacoes_sistema": True  # Ofensiva em risco e sistema
         }
     }
 
@@ -306,19 +317,25 @@ def obter_schema_padrao_produto() -> Dict[str, Any]:
         "id": "",
         "nome": "",
         "marca": "",
-        "preco_aura": 0.0,        # Preço oficial de venda
-        "preco_original": 0.0,    # Para exibir descontos
-        "custo_moedas": 0, 
+        "preco_cartao": 0.0,      # Preço no cartão de crédito/débito
+        "preco_pix": 0.0,         # Preço no PIX (desconto automático)
+        "preco_aura": 0.0,        # Alias de preco_cartao (legado — mantido para compatibilidade)
+        "preco_original": 0.0,    # Para exibir descontos (riscado)
+        "custo": 0.0,             # Custo interno (referência — não exibido ao cliente)
+        "custo_moedas": 0,
         "nivel_minimo": 1,
         "imagem_url": "",
+        "descricao": "",
         "categoria": "Suplementos",
         "estoque": True,
+        "destaque": False,
+        "tamanhos": [],           # Lista de sabores/variações disponíveis
         # --- CAMPOS DE LOGÍSTICA ---
-        "peso_kg": 0.5,           
-        "largura_cm": 15,         
+        "peso_kg": 0.5,
+        "largura_cm": 15,
         "altura_cm": 10,
         "comprimento_cm": 20,
-        "cep_origem": "74000000"  
+        "cep_origem": "74180170"  # CEP do ponto de despacho
     }
 
 def obter_schema_padrao_pedido() -> Dict[str, Any]:
