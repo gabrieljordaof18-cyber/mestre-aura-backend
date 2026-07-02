@@ -178,6 +178,7 @@ def auth_social():
                 "🎁 Você tem 7 dias grátis do Plano Plus! Ative em Mercado → Vouchers e desbloqueie o Mestre da Aura.",
                 {"action": "open_mercado_vouchers"}
             )
+            _enviar_email(email, "🏆 Bem-vindo(a) ao AURA Performance!", _html_boas_vindas(nome_final))
         else:
             # Garante auth_provider atualizado mesmo que o usuário já exista
             atualizar_usuario(str(usuario["_id"]), {
@@ -248,6 +249,7 @@ def registrar_usuario():
             "🎁 Você tem 7 dias grátis do Plano Plus! Ative em Mercado → Vouchers e desbloqueie o Mestre da Aura.",
             {"action": "open_mercado_vouchers"}
         )
+        _enviar_email(email, "🏆 Bem-vindo(a) ao AURA Performance!", _html_boas_vindas(nome))
 
         seguro_ativo = False
         try:
@@ -311,6 +313,63 @@ def login_usuario():
         return jsonify({"erro": "Falha interna no login"}), 500
 
 
+def _enviar_email(to_email: str, subject: str, html_content: str):
+    """Envia e-mail via SendGrid. Silencioso se a chave não estiver configurada."""
+    sendgrid_key = os.getenv("SENDGRID_API_KEY")
+    if not sendgrid_key:
+        return
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        msg = Mail(
+            from_email=os.getenv("EMAIL_FROM", "noreply@auraperformance.com.br"),
+            to_emails=to_email,
+            subject=subject,
+            html_content=html_content,
+        )
+        SendGridAPIClient(sendgrid_key).send(msg)
+    except Exception as e:
+        logger.error(f"Erro ao enviar e-mail para {to_email}: {e}")
+
+
+def _html_boas_vindas(nome: str) -> str:
+    primeiro = nome.split()[0] if nome else "Atleta"
+    return f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#000;color:#fff;padding:40px;border-radius:16px;">
+        <h1 style="color:#FFD700;font-size:24px;margin-bottom:8px;">AURA Performance</h1>
+        <p style="color:#aaa;margin-bottom:24px;">Bem-vindo(a) ao AURA OS, {primeiro}!</p>
+        <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;margin-bottom:24px;">
+            <p style="color:#fff;font-size:15px;line-height:1.6;">Sua conta foi criada com sucesso. Agora você tem acesso à plataforma de performance mais completa do Brasil. 🏆</p>
+            <p style="color:#aaa;font-size:13px;margin-top:12px;">Lembre-se: você tem <span style="color:#FFD700;font-weight:bold;">7 dias grátis do Plano Plus</span>. Ative em Mercado → Vouchers.</p>
+        </div>
+        <p style="color:#555;font-size:11px;">Se você não criou esta conta, entre em contato com suporte@auraperformance.com.br</p>
+    </div>
+    """
+
+
+def _html_confirmacao_compra(nome: str, valor_total: float, itens: list) -> str:
+    primeiro = nome.split()[0] if nome else "Atleta"
+    itens_html = "".join(
+        f'<li style="color:#ccc;font-size:13px;margin-bottom:4px;">{i.get("nome","Item")} × {i.get("qtd",1)}</li>'
+        for i in (itens or [])
+    )
+    return f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#000;color:#fff;padding:40px;border-radius:16px;">
+        <h1 style="color:#FFD700;font-size:24px;margin-bottom:8px;">AURA Performance</h1>
+        <p style="color:#aaa;margin-bottom:24px;">Pedido confirmado, {primeiro}! ✅</p>
+        <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;margin-bottom:24px;">
+            <p style="color:#aaa;font-size:12px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Itens do pedido</p>
+            <ul style="padding-left:16px;margin:0 0 16px 0;">{itens_html}</ul>
+            <div style="border-top:1px solid #333;padding-top:12px;">
+                <p style="color:#fff;font-size:16px;font-weight:bold;">Total: R$ {valor_total:.2f}</p>
+            </div>
+        </div>
+        <p style="color:#aaa;font-size:13px;">Seu pedido já está sendo preparado. Você receberá atualizações de rastreio em breve.</p>
+        <p style="color:#555;font-size:11px;margin-top:16px;">Dúvidas? suporte@auraperformance.com.br</p>
+    </div>
+    """
+
+
 @api_bp.route('/auth/forgot-password', methods=['POST', 'OPTIONS'])
 def forgot_password():
     if request.method == 'OPTIONS':
@@ -333,31 +392,21 @@ def forgot_password():
             "reset_token_expiry": expiry
         })
 
-        sendgrid_key = os.getenv("SENDGRID_API_KEY")
-        if sendgrid_key:
-            try:
-                from sendgrid import SendGridAPIClient
-                from sendgrid.helpers.mail import Mail
-                msg = Mail(
-                    from_email=os.getenv("EMAIL_FROM", "noreply@auraperformance.app"),
-                    to_emails=email,
-                    subject="🔑 Código de redefinição — AURA Performance",
-                    html_content=f"""
-                    <div style="font-family:sans-serif;max-width:400px;margin:0 auto;background:#000;color:#fff;padding:40px;border-radius:16px;">
-                        <h1 style="color:#FFD700;font-size:24px;margin-bottom:8px;">AURA Performance</h1>
-                        <p style="color:#aaa;margin-bottom:24px;">Recebemos uma solicitação para redefinir sua senha.</p>
-                        <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px;">
-                            <p style="color:#aaa;font-size:12px;margin-bottom:8px;text-transform:uppercase;letter-spacing:2px;">Seu código</p>
-                            <h2 style="color:#FFD700;font-size:40px;letter-spacing:8px;margin:0;">{token_reset}</h2>
-                        </div>
-                        <p style="color:#666;font-size:12px;">Este código expira em 15 minutos. Se não foi você, ignore este e-mail.</p>
-                    </div>
-                    """
-                )
-                sg = SendGridAPIClient(sendgrid_key)
-                sg.send(msg)
-            except Exception as e:
-                logger.error(f"Erro ao enviar email reset: {e}")
+        _enviar_email(
+            email,
+            "🔑 Código de redefinição — AURA Performance",
+            f"""
+            <div style="font-family:sans-serif;max-width:400px;margin:0 auto;background:#000;color:#fff;padding:40px;border-radius:16px;">
+                <h1 style="color:#FFD700;font-size:24px;margin-bottom:8px;">AURA Performance</h1>
+                <p style="color:#aaa;margin-bottom:24px;">Recebemos uma solicitação para redefinir sua senha.</p>
+                <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px;">
+                    <p style="color:#aaa;font-size:12px;margin-bottom:8px;text-transform:uppercase;letter-spacing:2px;">Seu código</p>
+                    <h2 style="color:#FFD700;font-size:40px;letter-spacing:8px;margin:0;">{token_reset}</h2>
+                </div>
+                <p style="color:#666;font-size:12px;">Este código expira em 15 minutos. Se não foi você, ignore este e-mail.</p>
+            </div>
+            """
+        )
 
         return jsonify({"sucesso": True, "mensagem": "Se o e-mail existir, você receberá as instruções."})
     except Exception as e:
@@ -489,6 +538,8 @@ def get_status_jogador(current_user_id):
             # XP Dobrado (Poção de XP)
             "xp_dobrado_ativo":   _checar_beneficio_ativo(dados, "xp_dobrado_expira_em"),
             "xp_dobrado_expira_em": dados.get("xp_dobrado_expira_em", ""),
+            # CPF (necessário para pagamentos Asaas)
+            "cpf":                dados.get("cpf", ""),
             # Cupons comprados no Laboratório
             "cupons_ativos":      dados.get("cupons_ativos", []),
             # Perfil profissional
@@ -670,7 +721,7 @@ def ativar_xp_dobrado(current_user_id):
 @api_bp.route('/usuario/ativar_cupom_premium', methods=['POST'])
 @token_required
 def ativar_cupom_premium(current_user_id):
-    """Compra o cupom AURA15 no Laboratório, debitando Cristais e armazenando em cupons_ativos."""
+    """Compra o cupom AURA10 no Laboratório, debitando Cristais e armazenando em cupons_ativos."""
     CUSTO_CRISTAIS = 300
     try:
         dados = carregar_memoria(current_user_id)
@@ -678,14 +729,14 @@ def ativar_cupom_premium(current_user_id):
         if cristais < CUSTO_CRISTAIS:
             return jsonify({"erro": f"Cristais insuficientes. Necessário: {CUSTO_CRISTAIS}."}), 400
         cupons = list(dados.get("cupons_ativos", []))
-        if "AURA15" not in cupons:
-            cupons.append("AURA15")
+        if "AURA10" not in cupons:
+            cupons.append("AURA10")
         salvar_memoria(current_user_id, {
             "saldo_cristais": cristais - CUSTO_CRISTAIS,
             "cupons_ativos":  cupons,
         })
-        logger.info(f"🏷️ Cupom AURA15 ativado para {current_user_id}")
-        return jsonify({"sucesso": True, "codigo": "AURA15"})
+        logger.info(f"🏷️ Cupom AURA10 ativado para {current_user_id}")
+        return jsonify({"sucesso": True, "codigo": "AURA10"})
     except Exception as e:
         logger.error(f"Erro ao ativar cupom premium para {current_user_id}: {e}")
         return jsonify({"erro": str(e)}), 500
@@ -694,21 +745,21 @@ def ativar_cupom_premium(current_user_id):
 @api_bp.route('/checkout/validar_cupom', methods=['POST'])
 @token_required
 def validar_cupom_checkout(current_user_id):
-    """Valida um código de cupom. AURA12 é público. AURA15 exige compra prévia."""
+    """Valida um código de cupom. AURA7 é público. AURA10 exige compra prévia."""
     try:
         dados = request.get_json(force=True)
         codigo = str(dados.get("codigo", "")).upper().strip()
         if not codigo:
             return jsonify({"valido": False, "erro": "Código vazio."}), 400
 
-        if codigo == "AURA12":
+        if codigo == "AURA7":
             return jsonify({"valido": True, "desconto": 0.07, "descricao": "7% OFF — Parceiros Aura"})
 
-        if codigo == "AURA15":
+        if codigo == "AURA10":
             user_data = carregar_memoria(current_user_id)
-            if "AURA15" in user_data.get("cupons_ativos", []):
+            if "AURA10" in user_data.get("cupons_ativos", []):
                 return jsonify({"valido": True, "desconto": 0.10, "descricao": "10% OFF — Cupom Premium"})
-            return jsonify({"valido": False, "erro": "Adquira o cupom AURA15 no Mercado de Cristais antes de usá-lo."})
+            return jsonify({"valido": False, "erro": "Adquira o cupom AURA10 no Mercado de Cristais antes de usá-lo."})
 
         return jsonify({"valido": False, "erro": "Cupom não reconhecido."})
     except Exception as e:
@@ -883,6 +934,13 @@ def atualizar_biometria(current_user_id):
             update_payload["provedor_auth"] = dados.get("provedor_auth")
         if dados.get("email"):
             update_payload["email"] = str(dados["email"]).strip().lower()
+
+        # CPF — limpa e salva (somente dígitos, deve ter 11 caracteres)
+        cpf_raw = dados.get("cpf")
+        if cpf_raw is not None:
+            cpf_limpo = ''.join(filter(str.isdigit, str(cpf_raw)))
+            if len(cpf_limpo) == 11:
+                update_payload["cpf"] = cpf_limpo
 
         # Plano (assinatura) — sincronização cliente/RevenueCat; webhook continua sendo fonte de reconciliação
         if "plano" in dados and dados.get("plano") is not None:
@@ -2973,6 +3031,21 @@ def webhook_asaas():
                         _criar_notificacao(uid, "mercado",
                                            "✅ Pagamento confirmado! Seu pedido já está sendo preparado.",
                                            {"pedido_id": pid, "acao": "abrir_pedido"})
+                        # E-mail de confirmação de compra
+                        try:
+                            usuario_doc = carregar_memoria(uid)
+                            if usuario_doc:
+                                _enviar_email(
+                                    usuario_doc.get("email", ""),
+                                    "✅ Pedido confirmado — AURA Performance",
+                                    _html_confirmacao_compra(
+                                        usuario_doc.get("nome", "Atleta"),
+                                        float(pedido.get("valor_total", 0)),
+                                        pedido.get("itens", []),
+                                    )
+                                )
+                        except Exception as me:
+                            logger.error(f"Erro ao enviar e-mail de confirmação: {me}")
             else:
                 logger.warning(f"⚠️ Webhook Asaas: pedido {payment_id} não encontrado no Atlas.")
 

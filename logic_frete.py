@@ -39,12 +39,11 @@ def calcular_cotacao_frete(cep_destino, itens_carrinho):
     # CEP de Origem puxado do Environment Variable do Render
     cep_origem = os.getenv("CEP_ORIGEM_AURA", "74180170")
 
-    motoboy = [_OPCAO_MOTOBOY_GOIANIA] if _e_cep_goiania(cep_destino) else []
+    if _e_cep_goiania(cep_destino):
+        return [_OPCAO_MOTOBOY_GOIANIA]
 
     if not token:
         logger.error("❌ Token do Melhor Envio não configurado no Render.")
-        if motoboy:
-            return motoboy
         return {"erro": "Serviço de frete temporariamente indisponível."}
 
     # Montando o payload para o Melhor Envio
@@ -84,17 +83,12 @@ def calcular_cotacao_frete(cep_destino, itens_carrinho):
         if response.status_code == 200:
             opcoes_me = response.json()
             if isinstance(opcoes_me, list):
-                return motoboy + opcoes_me
-            # Resposta inesperada mas válida: retorna só o motoboy se houver
-            return motoboy if motoboy else opcoes_me
+                return opcoes_me
+            return opcoes_me
         else:
             logger.error(f"❌ Erro Melhor Envio ({response.status_code}): {response.text}")
-            if motoboy:
-                return motoboy
             return {"erro": "Não foi possível calcular o frete para este CEP."}
 
     except Exception as e:
         logger.error(f"🔥 Falha na conexão com Melhor Envio: {e}")
-        if motoboy:
-            return motoboy
         return {"erro": "Erro de conexão com o servidor de frete."}

@@ -82,6 +82,7 @@ def criar_ou_buscar_cliente(usuario_dados: dict) -> str:
     }
     
     try:
+        logger.info(f"📤 Payload Asaas cliente: {payload}")
         criacao = requests.post(f"{ASAAS_URL}/customers", json=payload, headers=headers)
         
         if criacao.status_code == 200:

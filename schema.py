@@ -25,6 +25,7 @@ def obter_schema_padrao_usuario(email: str = "", nome: str = "Atleta") -> Dict[s
         "created_at": agora_iso,
         "updated_at": agora_iso,
         "foto_perfil": "",
+        "cpf": "",
 
         # --- [AURA NEW] PERFIL DE SAÚDE (persistente, único por usuário, nunca apagado) ---
         # peso_kg/altura_cm também existem soltos na raiz do doc por compatibilidade com
